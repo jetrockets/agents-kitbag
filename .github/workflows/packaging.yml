@@ -5,10 +5,10 @@ name: Packaging
 # changes. No signing here.
 on:
   pull_request:
-    paths: [packaging/**, Cargo.toml, Cargo.lock, rust-toolchain.toml, crates/toolkit-app/Cargo.toml, crates/toolkit-app/src/main.rs, crates/toolkit-app/src/entrypoint.rs, crates/toolkit-app/src/updates.rs, crates/toolkit-runner/**, .github/workflows/packaging.yml, .github/workflows/release-app.yml]
+    paths: [packaging/**, Cargo.toml, Cargo.lock, rust-toolchain.toml, crates/toolkit-app/Cargo.toml, crates/toolkit-app/src/main.rs, crates/toolkit-app/src/entrypoint.rs, crates/toolkit-app/src/updates.rs, crates/toolkit-runner/**, .github/workflows/packaging.yml, .github/workflows/release.yml]
   push:
     branches: [main]
-    paths: [packaging/**, Cargo.toml, Cargo.lock, rust-toolchain.toml, crates/toolkit-app/Cargo.toml, crates/toolkit-app/src/main.rs, crates/toolkit-app/src/entrypoint.rs, crates/toolkit-app/src/updates.rs, crates/toolkit-runner/**, .github/workflows/packaging.yml, .github/workflows/release-app.yml]
+    paths: [packaging/**, Cargo.toml, Cargo.lock, rust-toolchain.toml, crates/toolkit-app/Cargo.toml, crates/toolkit-app/src/main.rs, crates/toolkit-app/src/entrypoint.rs, crates/toolkit-app/src/updates.rs, crates/toolkit-runner/**, .github/workflows/packaging.yml, .github/workflows/release.yml]
   workflow_dispatch:
 
 permissions:

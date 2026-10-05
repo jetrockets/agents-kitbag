@@ -1,15 +1,16 @@
-name: Release app
+name: Release
 
-# An app-v* tag builds every package and publishes a GitHub release with
-# checksums. (v* tags are the Node.js toolkit's.) Run it by hand
-# (workflow_dispatch) for a dry run that builds and uploads the artifacts but
-# publishes nothing.
+# A v* tag builds every package and publishes a GitHub release with signed
+# checksums. Installed copies read the repository's latest release and update
+# themselves from it, so what is published here reaches people's machines.
+# Run it by hand (workflow_dispatch) for a dry run that builds and uploads
+# the artifacts but publishes nothing.
 #
 # Nothing is code-signed yet: macOS gets the ad-hoc signature arm64 needs,
 # Windows none. Gatekeeper and SmartScreen will ask the first time.
 on:
   push:
-    tags: ["app-v*"]
+    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
@@ -33,8 +34,8 @@ jobs:
         id: version
         run: |
           version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)"
-          if [ "$GITHUB_EVENT_NAME" = push ] && [ "${GITHUB_REF_NAME#app-v}" != "$version" ]; then
-            echo "::error::Tag ${GITHUB_REF_NAME} does not match version ${version} in Cargo.toml; expected tag app-v${version}."
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "${GITHUB_REF_NAME#v}" != "$version" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match version ${version} in Cargo.toml; expected tag v${version}."
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -114,33 +115,46 @@ jobs:
           path: dist/*.dmg
           if-no-files-found: error
 
+  # The only job that sees the update-signing key, and the only one that
+  # writes. It builds nothing: cargo runs the build scripts and proc macros of
+  # every dependency, and none of them should run beside the key.
   publish:
     name: GitHub release
     needs: [version, build, macos]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
-    # The only job that writes: it creates the release.
     permissions:
       contents: write
     steps:
+      # The public key the signature is checked against, and the release notes.
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
-      # checksums.txt in sha256sum format: fastframe-update installs nothing
-      # whose hash is not in it.
-      - name: Checksums
-        run: (cd dist && sha256sum * > checksums.txt && cat checksums.txt)
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+      # Writes checksums.txt and checksums.txt.sig, a raw Ed25519 signature
+      # over its exact bytes, after checking that the secret matches the key
+      # compiled into the app. An installed copy installs nothing without a
+      # valid signature. See packaging/UPDATE_SIGNING.md.
+      - name: Sign update manifest
+        uses: crmne/native-packages/.github/actions/sign-release@999768410cf53cdc68c8679c09cb14de1a6bca7b # v0.8.1
+        with:
+          directory: dist
+          public-key: crates/toolkit-app/assets/update-public-key.hex
+          key-env: UPDATE_SIGNING_KEY
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
       # packaging/release-notes/<tag>.md when there is one, GitHub's own
       # notes otherwise.
-      - uses: actions/checkout@v4
-        with:
-          path: source
-          sparse-checkout: packaging/release-notes
       - name: Release notes
         id: notes
         run: |
-          notes="source/packaging/release-notes/${GITHUB_REF_NAME}.md"
+          notes="packaging/release-notes/${GITHUB_REF_NAME}.md"
           if [ -f "$notes" ]; then
             cp "$notes" release-notes.md
             echo "written=true" >> "$GITHUB_OUTPUT"
@@ -150,11 +164,10 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*
-          name: Claude Toolkit app ${{ needs.version.outputs.version }}
+          name: Claude Toolkit ${{ github.ref_name }}
           body_path: ${{ steps.notes.outputs.written == 'true' && 'release-notes.md' || '' }}
           generate_release_notes: ${{ steps.notes.outputs.written != 'true' }}
-          # The repository's latest release stays the terminal menu's until
-          # the app replaces it.
-          make_latest: false
-          # The version, not the tag: app-v0.21.0 always has a hyphen.
-          prerelease: ${{ contains(needs.version.outputs.version, '-') }}
+          # v0.24.0-rc1 is a pre-release, and installed copies are never
+          # offered one: they read the latest release.
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          make_latest: ${{ !contains(github.ref_name, '-') }}

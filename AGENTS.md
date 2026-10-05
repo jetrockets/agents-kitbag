@@ -91,14 +91,24 @@ The token `expired` is the one the made-up services refuse.
 - Never use em dashes. Use a full stop, comma, colon, or parentheses.
 - Report platform coverage honestly: say when something was only compiled.
 
-## Releasing the app
+## Releasing
+
+A release reaches every installed copy: the app reads this repository's
+latest release and offers it.
 
 1. Bump `version` in the root `Cargo.toml`, run `cargo update -w`, commit.
-   Write `packaging/release-notes/app-vX.Y.Z.md` if GitHub's generated notes
-   will not do.
-2. Tag `app-vX.Y.Z` and push the tag.
-3. `release-app.yml` builds a universal macOS disk image, a Windows portable
-   archive and a Linux `tar.gz`, writes `checksums.txt`, and publishes a
-   GitHub release. Nothing is code-signed yet.
+   Write `packaging/release-notes/vX.Y.Z.md` if GitHub's generated notes will
+   not do.
+2. Tag `vX.Y.Z` (annotated) and push the tag.
+3. `release.yml` builds a universal macOS disk image, a Windows portable
+   archive and a Linux `tar.gz`, signs `checksums.txt` with the update key,
+   and publishes a GitHub release as the latest. Nothing is code-signed yet.
 
-Dry run without publishing: `gh workflow run release-app.yml`.
+A tag with a hyphen (`v0.24.0-rc1`) is a pre-release: published, never the
+latest, so nobody is offered it. Dry run without publishing:
+`gh workflow run release.yml`.
+
+The names are a contract with installed copies (fastframe-update): tags are
+`v<version>`, assets `claude-toolkit-v<version>-<target>` plus
+`checksums.txt` and `checksums.txt.sig`, and both programs answer `--version`
+with `<name> <version>`. The key is in `packaging/UPDATE_SIGNING.md`.

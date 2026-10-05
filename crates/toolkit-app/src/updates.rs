@@ -1,8 +1,12 @@
-//! Self-update through fastframe-update.
+//! Self-update through fastframe-update, from the repository's GitHub
+//! releases.
 //!
 //! A newer release is offered in the sidebar and nothing is downloaded until
-//! the person clicks. A check that fails (no network, no release feed yet)
-//! is silent and tried again later.
+//! the person clicks. A check that fails (no network) is logged and tried
+//! again later.
+//!
+//! A release is installed only when its `checksums.txt` carries a valid
+//! signature by the key compiled in here. See packaging/UPDATE_SIGNING.md.
 
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -20,6 +24,7 @@ pub const CONFIG: UpdateConfig = UpdateConfig {
         executable_names: &[],
         legacy_bundle_names: &[],
     },
+    publisher_key: Some(include_str!("../assets/update-public-key.hex")),
     ..UpdateConfig::new(
         "jetrockets/claude-toolkit",
         "Claude Toolkit",
