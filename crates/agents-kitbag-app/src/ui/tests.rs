@@ -44,7 +44,7 @@ fn demo_snapshot() -> Snapshot {
 
 fn rig(snapshot: Snapshot) -> Harness<'static, Rig> {
     let mut harness = Harness::builder()
-        .with_size(vec2(960.0, 700.0))
+        .with_size(vec2(960.0, 760.0))
         .with_theme(egui::Theme::Dark)
         .build_ui_state(
             |ui, rig: &mut Rig| {
@@ -187,6 +187,41 @@ fn a_server_the_service_hosts_can_be_checked_and_deleted_but_not_edited() {
 }
 
 #[test]
+fn an_assistant_that_is_not_on_this_machine_cannot_be_chosen() {
+    let mut snapshot = demo_snapshot();
+    snapshot.installed = vec![Assistant::ClaudeDesktop, Assistant::ClaudeCode];
+    let mut h = rig(snapshot);
+    h.get_by_label("Assistant").click();
+    step(&mut h);
+    assert!(
+        h.get_by_label("Codex (not installed)")
+            .accesskit_node()
+            .is_disabled()
+    );
+    assert!(!h.get_by_label("Claude Code").accesskit_node().is_disabled());
+}
+
+#[test]
+fn a_form_can_set_the_server_up_for_the_other_assistants_too() {
+    let mut snapshot = demo_snapshot();
+    snapshot.installed = vec![Assistant::ClaudeDesktop, Assistant::Codex];
+    let mut h = rig(snapshot);
+    click(&mut h, "Asana, token refused");
+    click(&mut h, "Replace token");
+    assert!(has(&h, "Set up for"));
+    // Only the assistants on this machine are offered.
+    assert!(!has(&h, "Claude Code"));
+    type_into(&mut h, form::token_field(), "tok");
+    click(&mut h, "Codex");
+    click(&mut h, "Save");
+    let commands = commands(&mut h);
+    let Some(Command::Save { also, .. }) = commands.last() else {
+        panic!("no Save in {commands:?}");
+    };
+    assert_eq!(also, &[Assistant::Codex]);
+}
+
+#[test]
 fn leaving_for_the_settings_closes_an_open_form() {
     let mut h = rig(demo_snapshot());
     click(&mut h, "Notion, not configured");
@@ -276,6 +311,7 @@ fn a_filled_form_is_saved_to_the_systems_store_by_default() {
             instance: Some("acme".into()),
             values: [("token".to_owned(), "ntn_secret".to_owned())].into(),
             store: StoreChoice::System,
+            also: Vec::new(),
         }]
     );
     assert!(has(&h, "Saving..."));

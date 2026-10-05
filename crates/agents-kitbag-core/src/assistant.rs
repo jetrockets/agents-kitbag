@@ -1,10 +1,10 @@
 //! The assistants whose setup the app looks after. Each keeps its MCP servers
 //! in a file of its own, in a format of its own.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::config::{self, ConfigFile};
-use crate::platform::Env;
+use crate::platform::{Env, Os};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Assistant {
@@ -80,6 +80,26 @@ impl Assistant {
         }
     }
 
+    /// Whether the assistant has been used on this machine: it has left the
+    /// folder (or file) it keeps its settings in. The program itself is not
+    /// looked for: a command-line one is found through a `PATH` that an app
+    /// started from the desktop does not have.
+    pub fn installed(self, env: &Env) -> bool {
+        let config = self.config_path(env);
+        match self {
+            Assistant::ClaudeDesktop => {
+                config.parent().is_some_and(Path::is_dir)
+                    || (env.os == Os::Mac
+                        && env.var(config::PATH_OVERRIDE).is_none()
+                        && [Path::new("/"), env.home.as_path()]
+                            .iter()
+                            .any(|root| root.join("Applications").join("Claude.app").is_dir()))
+            }
+            Assistant::ClaudeCode => config.is_file() || env.home.join(".claude").is_dir(),
+            Assistant::Codex => config.parent().is_some_and(Path::is_dir),
+        }
+    }
+
     pub fn config(self, env: &Env) -> ConfigFile {
         ConfigFile::of(self, self.config_path(env), env.os)
     }
@@ -98,7 +118,6 @@ impl Assistant {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::platform::Os;
 
     #[test]
     fn each_assistant_has_its_own_file() {
@@ -149,6 +168,23 @@ mod tests {
             "claude-code-jira-acme"
         );
         assert_eq!(Assistant::Codex.secret_key("jira-acme"), "codex-jira-acme");
+    }
+
+    #[test]
+    fn an_assistant_is_installed_once_it_has_left_its_settings() {
+        let home = tempfile::tempdir().unwrap();
+        // Linux: no application folder to find Claude Desktop in.
+        let env = Env::with(Os::Linux, home.path(), &[]);
+        for assistant in Assistant::ALL {
+            assert!(!assistant.installed(&env), "{}", assistant.name());
+        }
+        std::fs::create_dir_all(home.path().join(".config/Claude")).unwrap();
+        assert!(Assistant::ClaudeDesktop.installed(&env));
+        assert!(!Assistant::Codex.installed(&env));
+        std::fs::create_dir_all(home.path().join(".codex")).unwrap();
+        assert!(Assistant::Codex.installed(&env));
+        std::fs::write(home.path().join(".claude.json"), "{}").unwrap();
+        assert!(Assistant::ClaudeCode.installed(&env));
     }
 
     #[test]

@@ -29,9 +29,16 @@ pub struct Backend {
 impl Backend {
     pub fn real(log_dir: Option<PathBuf>) -> anyhow::Result<Self> {
         let env = Env::current();
+        // The first assistant that is on this machine, so the window does
+        // not open on one that is not.
+        let assistant = Assistant::ALL
+            .iter()
+            .copied()
+            .find(|assistant| assistant.installed(&env))
+            .unwrap_or(Assistant::ClaudeDesktop);
         Ok(Self {
             configs: configs(&env),
-            assistant: Assistant::ClaudeDesktop,
+            assistant,
             runner: Box::new(SystemRunner),
             http: Box::new(UreqHttp::new().map_err(anyhow::Error::msg)?),
             runner_path: runner_path(env.os).to_string_lossy().into_owned(),
@@ -43,14 +50,23 @@ impl Backend {
 
     /// The config of the assistant the window is looking at.
     pub fn config(&self) -> &ConfigFile {
+        self.config_of(self.assistant)
+    }
+
+    pub fn config_of(&self, assistant: Assistant) -> &ConfigFile {
         self.configs
             .iter()
-            .find(|config| config.assistant() == self.assistant)
+            .find(|config| config.assistant() == assistant)
             .expect("every assistant has a config")
     }
 
     /// Runs `work` with everything `agents-kitbag-core` reaches the outside through.
     pub fn with<R>(&self, work: impl FnOnce(&Ctx) -> R) -> R {
+        self.with_for(self.assistant, work)
+    }
+
+    /// The same, writing to this assistant's config.
+    pub fn with_for<R>(&self, assistant: Assistant, work: impl FnOnce(&Ctx) -> R) -> R {
         let packages = SystemPackages {
             env: &self.env,
             runner: &*self.runner,
@@ -60,7 +76,7 @@ impl Backend {
             runner: &*self.runner,
             http: &*self.http,
             packages: &packages,
-            config: self.config(),
+            config: self.config_of(assistant),
             runner_path: &self.runner_path,
         })
     }

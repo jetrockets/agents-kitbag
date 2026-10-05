@@ -36,6 +36,8 @@ pub enum Command {
         instance: Option<String>,
         values: Values,
         store: StoreChoice,
+        /// The other assistants to set the same server up for.
+        also: Vec<Assistant>,
     },
     Delete(Vec<String>),
     PurgeBackups,
@@ -63,6 +65,7 @@ impl Command {
                 integration,
                 instance,
                 store,
+                also,
                 ..
             } => {
                 let store = match store {
@@ -71,11 +74,22 @@ impl Command {
                     StoreChoice::System => "the system store",
                     StoreChoice::Plain => "the config file",
                 };
+                let also = match also.as_slice() {
+                    [] => String::new(),
+                    others => format!(
+                        ", also for {}",
+                        others
+                            .iter()
+                            .map(|a| a.name())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                };
                 match instance {
                     Some(instance) => {
-                        format!("save {integration} \"{instance}\", token in {store}")
+                        format!("save {integration} \"{instance}\", token in {store}{also}")
                     }
-                    None => format!("save {integration}, token in {store}"),
+                    None => format!("save {integration}, token in {store}{also}"),
                 }
             }
             Command::Check(key) => format!("check {key}"),
@@ -182,6 +196,11 @@ impl Worker {
                     .flatten(),
             })
             .collect();
+        self.state.installed = Assistant::ALL
+            .iter()
+            .copied()
+            .filter(|assistant| assistant.installed(&self.backend.env))
+            .collect();
         self.state.migration =
             migrate::pending(&servers, &self.backend.runner_path, self.backend.env.os);
         self.state.backups = backup::count(self.backend.config().path());
@@ -226,8 +245,9 @@ impl Worker {
                 instance,
                 values,
                 store,
+                also,
             } => {
-                self.save(id, integration, instance, values, store);
+                self.save(id, integration, instance, values, store, also);
             }
             Command::Delete(keys) => match self.backend.config().remove_servers(&keys) {
                 Ok(removed) if removed.is_empty() => {}
@@ -424,6 +444,7 @@ impl Worker {
         instance: Option<String>,
         values: Values,
         store: StoreChoice,
+        also: Vec<Assistant>,
     ) {
         let Some(integration) = integrations::by_key(integration) else {
             return;
@@ -455,10 +476,53 @@ impl Worker {
                 self.state.gh_lacks_project_scope = done.warning.is_some();
             }
             self.state.needs_restart = true;
-            self.notice(
-                Tone::Good,
-                format!("{} connected ({})", integration.name, done.account),
-            );
+            // The same server for the other assistants that were asked for.
+            // Each gets a token entry of its own, so one can be deleted
+            // without the others losing theirs.
+            let mut reached = vec![self.backend.assistant.name()];
+            let mut failed = Vec::new();
+            for other in also {
+                if other == self.backend.assistant || reached.contains(&other.name()) {
+                    continue;
+                }
+                match self
+                    .backend
+                    .with_for(other, |ctx| setup::run(ctx, &request))
+                {
+                    Ok(_) => {
+                        reached.push(other.name());
+                        self.unread.insert(other);
+                        // Its tokens are checked again when it is next in view.
+                        self.set_aside.remove(&other);
+                    }
+                    Err(error) => {
+                        log::warn!(
+                            "{} was not saved for {}: {error}",
+                            integration.name,
+                            other.name()
+                        );
+                        failed.push(format!("{}: {error}", other.name()));
+                    }
+                }
+            }
+            let connected = if reached.len() == 1 {
+                format!("{} connected ({})", integration.name, done.account)
+            } else {
+                format!(
+                    "{} connected ({}) for {}",
+                    integration.name,
+                    done.account,
+                    reached.join(", ")
+                )
+            };
+            if failed.is_empty() {
+                self.notice(Tone::Good, connected);
+            } else {
+                self.notice(
+                    Tone::Bad,
+                    format!("{connected}. Not set up for {}", failed.join("; ")),
+                );
+            }
             self.check(Some(done.key.clone()));
         }
         self.state.save = Some(SaveOutcome { id, result });
@@ -629,6 +693,7 @@ mod tests {
                 .into_iter()
                 .collect(),
             store: StoreChoice::System,
+            also: Vec::new(),
         });
         let snapshot = shared.lock().unwrap().clone();
         assert!(snapshot.save.unwrap().result.is_ok());
@@ -642,6 +707,61 @@ mod tests {
             "ASANA_ACCESS_TOKEN=keychain:agents-kitbag-claude-code-asana"
         );
         assert_eq!(config["mcpServers"]["notion-acme"]["type"], "stdio");
+    }
+
+    #[test]
+    fn one_save_sets_a_server_up_for_every_assistant_asked_for() {
+        let (mut worker, shared, dir) = worker();
+        worker.handle(Command::Save {
+            id: 3,
+            integration: "asana",
+            instance: None,
+            values: [("token".to_owned(), "tok".to_owned())]
+                .into_iter()
+                .collect(),
+            store: StoreChoice::System,
+            also: vec![Assistant::ClaudeCode, Assistant::Codex],
+        });
+        let snapshot = shared.lock().unwrap().clone();
+        assert_eq!(snapshot.assistant, Assistant::ClaudeDesktop);
+        assert_eq!(
+            snapshot.notice.unwrap().text,
+            "Asana connected (user: Ada Lovelace) for Claude Desktop, Claude Code, Codex"
+        );
+        assert!(snapshot.needs_restart);
+
+        // Each assistant has the server, with a token entry of its own.
+        let desktop =
+            std::fs::read_to_string(dir.path().join("claude_desktop_config.json")).unwrap();
+        assert!(desktop.contains("ASANA_ACCESS_TOKEN=keychain:agents-kitbag-asana\""));
+        let code = std::fs::read_to_string(dir.path().join(".claude.json")).unwrap();
+        assert!(code.contains("keychain:agents-kitbag-claude-code-asana"));
+        let codex = std::fs::read_to_string(dir.path().join(".codex/config.toml")).unwrap();
+        assert!(codex.contains("[mcp_servers.asana]"));
+        assert!(codex.contains("keychain:agents-kitbag-codex-asana"));
+
+        // Each of the others still has the change to take in.
+        worker.handle(Command::UseAssistant(Assistant::Codex));
+        let snapshot = shared.lock().unwrap().clone();
+        assert!(snapshot.needs_restart);
+        assert_eq!(status(&snapshot, "asana", "asana"), Some(Status::Ok));
+    }
+
+    #[test]
+    fn the_snapshot_says_which_assistants_are_on_this_machine() {
+        let (mut worker, shared, dir) = worker();
+        worker.handle(Command::Refresh);
+        assert_eq!(shared.lock().unwrap().installed, Assistant::ALL);
+        std::fs::remove_dir_all(dir.path().join(".codex")).unwrap();
+        worker.handle(Command::Refresh);
+        assert_eq!(
+            shared.lock().unwrap().installed,
+            [Assistant::ClaudeDesktop, Assistant::ClaudeCode]
+        );
+        // Nothing of the machine the tests run on is looked at.
+        std::fs::remove_file(dir.path().join(".claude.json")).unwrap();
+        worker.handle(Command::Refresh);
+        assert_eq!(shared.lock().unwrap().installed, [Assistant::ClaudeDesktop]);
     }
 
     #[test]
@@ -664,6 +784,7 @@ mod tests {
             instance: None,
             values: [("token".to_owned(), "figd_demo".to_owned())].into(),
             store: StoreChoice::System,
+            also: Vec::new(),
         });
         let snapshot = shared.lock().unwrap().clone();
         let outcome = snapshot.save.clone().unwrap();
@@ -689,6 +810,7 @@ mod tests {
             instance: Some("acme".to_owned()),
             values: [("token".to_owned(), demo::BAD_TOKEN.to_owned())].into(),
             store: StoreChoice::Plain,
+            also: Vec::new(),
         });
         let snapshot = shared.lock().unwrap().clone();
         assert!(
@@ -767,6 +889,7 @@ mod tests {
             instance: None,
             values: [("token".to_owned(), "figd_demo".to_owned())].into(),
             store: StoreChoice::Plain,
+            also: Vec::new(),
         });
         let snapshot = shared.lock().unwrap().clone();
         assert!(snapshot.config_error.unwrap().contains("not valid JSON"));
@@ -791,9 +914,13 @@ mod tests {
             store: StoreChoice::OnePassword {
                 vault: "Private".to_owned(),
             },
+            also: vec![Assistant::ClaudeCode, Assistant::Codex],
         };
         let line = save.describe();
-        assert_eq!(line, "save jira \"acme\", token in 1Password");
+        assert_eq!(
+            line,
+            "save jira \"acme\", token in 1Password, also for Claude Code, Codex"
+        );
         assert!(!line.contains("s3cret-token") && !line.contains("ada@acme.com"));
         assert_eq!(
             Command::Check("jira-acme".into()).describe(),
