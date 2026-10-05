@@ -118,11 +118,16 @@ jobs:
   # The only job that sees the update-signing key, and the only one that
   # writes. It builds nothing: cargo runs the build scripts and proc macros of
   # every dependency, and none of them should run beside the key.
+  #
+  # The key lives in the release-signing environment, which takes jobs from
+  # v* tags only and waits for a reviewer: the packages are built, and are
+  # published to every installed copy only once someone has approved them.
   publish:
     name: GitHub release
     needs: [version, build, macos]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    environment: release-signing
     permissions:
       contents: write
     steps:

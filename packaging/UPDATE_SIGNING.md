@@ -9,9 +9,12 @@ missing or invalid signature fails closed: there is no unsigned fallback and
 no key taken from the release being checked. The file names in
 `checksums.txt` bind each checksum to its version and platform.
 
-The private half is the repository secret `UPDATE_SIGNING_KEY`, an Ed25519
-PKCS#8 PEM key. Only the release workflow's publish job reads it, and that
-job builds nothing. The pinned `sign-release` action writes the manifest,
+The private half is `UPDATE_SIGNING_KEY`, an Ed25519 PKCS#8 PEM key, a secret
+of the `release-signing` environment. The environment takes jobs from `v*`
+tags only and requires a reviewer's approval, so a pushed tag builds the
+packages but publishes nothing until someone has looked at the commit and
+the build and approved. Only the release workflow's publish job reads the
+key, and that job builds nothing. Do not work around the approval. The pinned `sign-release` action writes the manifest,
 checks that the secret matches the committed public key, signs, and verifies
 what it wrote.
 
