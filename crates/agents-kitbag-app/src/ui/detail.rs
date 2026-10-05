@@ -228,7 +228,11 @@ fn card(
             } else {
                 "Edit"
             };
-            if kit::icon_button(ui, Icon::Pencil, edit, Kind::Secondary, true).clicked() {
+            // Editing would put a server of the app's own in the place of
+            // the service's.
+            if !instance.hosted
+                && kit::icon_button(ui, Icon::Pencil, edit, Kind::Secondary, true).clicked()
+            {
                 state.form = Some(Form::edit(integration, &instance.key, &instance.prefill));
             }
             if kit::icon_button(ui, Icon::Trash, "Delete", Kind::Danger, true).clicked() {

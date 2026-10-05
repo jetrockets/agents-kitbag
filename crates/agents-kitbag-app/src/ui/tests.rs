@@ -168,6 +168,25 @@ fn the_list_is_of_the_chosen_assistants_servers() {
 }
 
 #[test]
+fn a_server_the_service_hosts_can_be_checked_and_deleted_but_not_edited() {
+    let h = rig(demo_snapshot());
+    assert!(has(&h, "Replace token"));
+
+    let mut snapshot = demo_snapshot();
+    let jira = snapshot
+        .integrations
+        .iter_mut()
+        .find(|i| i.key == "jira")
+        .unwrap();
+    jira.instances[0].hosted = true;
+    let h = rig(snapshot);
+    assert!(has(&h, "jira-acme"));
+    assert!(has(&h, "Check"));
+    assert!(has(&h, "Delete"));
+    assert!(!has(&h, "Replace token"));
+}
+
+#[test]
 fn leaving_for_the_settings_closes_an_open_form() {
     let mut h = rig(demo_snapshot());
     click(&mut h, "Notion, not configured");

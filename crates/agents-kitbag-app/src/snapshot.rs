@@ -28,6 +28,9 @@ pub struct InstanceView {
     pub prefill: Values,
     /// Where its token is kept; `None` for a server without one.
     pub location: Option<String>,
+    /// The service's own server, reached by URL: the app did not set it up
+    /// and has nothing of it to edit.
+    pub hosted: bool,
     pub health: HealthView,
 }
 
