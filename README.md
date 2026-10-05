@@ -8,10 +8,11 @@ egui and [fastframe](https://github.com/crmne/fastframe).
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/window-light.png">
-  <img src="docs/screenshots/window-dark.png" alt="Agents Kitbag: the integrations in a sidebar, and a Jira server with a working token kept in the Keychain">
+  <img src="docs/screenshots/window-dark.png" alt="Agents Kitbag: a rail of sections, the integrations, and a Jira server with a working token kept in the Keychain">
 </picture>
 
-A sidebar lists the integrations with a mark for the state of their tokens. The
+A rail on the left holds the sections (MCP servers today) and the settings.
+Beside it, the integrations are listed with a mark for the state of their tokens. The
 pane beside it shows each configured server, where its token is kept and
 whether it still works, and the form that sets one up.
 
