@@ -123,6 +123,13 @@ impl HealthCtx<'_> {
 
     /// One server's health.
     pub fn check(&self, key: &str, server: &ServerConfig, op_usable: bool) -> Health {
+        // A server the service hosts has no token of ours to look for:
+        // without this it would be reported as "token missing".
+        if let Some(url) = server.url() {
+            return Health::skip(format!(
+                "Connects to {url} and signs in there. There is no token here to check."
+            ));
+        }
         // Every op-backed server would otherwise report "token missing" when
         // 1Password is locked, which sends people off re-running setup for
         // nothing.
@@ -345,6 +352,24 @@ mod tests {
             ctx(&env, &runner, &bad).check("asana", &asana("tok"), false),
             Health::expired("HTTP 401")
         );
+    }
+
+    #[test]
+    fn a_server_the_service_hosts_has_no_token_to_miss() {
+        let (env, runner, http) = (env(), FakeRunner::default(), FakeHttp::default());
+        let mut hosted = ServerConfig::default();
+        hosted
+            .rest
+            .insert("url".to_owned(), "https://mcp.figma.com/mcp".into());
+        let results = ctx(&env, &runner, &http).check_all(&[("figma".to_owned(), hosted)]);
+        assert_eq!(results[0].1.status, Status::Skip);
+        assert_eq!(
+            results[0].1.detail.as_deref(),
+            Some(
+                "Connects to https://mcp.figma.com/mcp and signs in there. There is no token here to check."
+            )
+        );
+        assert!(http.requests().is_empty());
     }
 
     #[test]
