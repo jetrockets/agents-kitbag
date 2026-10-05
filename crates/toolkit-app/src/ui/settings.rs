@@ -43,6 +43,63 @@ pub fn show(ui: &mut Ui, snapshot: &Snapshot, state: &mut State, out: &mut Vec<C
 
     kit::card(ui, |ui| {
         ui.spacing_mut().item_spacing.y = 8.0;
+        // First: the version and the way to a newer one are what people open
+        // Settings for most, and must not need scrolling to.
+        kit::section(ui, "About");
+        kit::text(
+            ui,
+            &format!("Claude Toolkit {}", env!("CARGO_PKG_VERSION")),
+            kit::regular(kit::SM),
+            p.text_secondary,
+        );
+        ui.horizontal(|ui| {
+            if state.update_check == Checked::Checking {
+                ui.add(eframe::egui::Spinner::new().size(14.0));
+            }
+            kit::text(
+                ui,
+                &update_line(state),
+                kit::regular(kit::SM),
+                p.text_secondary,
+            );
+        });
+        ui.horizontal(|ui| {
+            if let Some(offer) = &state.update {
+                let label = if offer.failed {
+                    "Try again"
+                } else {
+                    "Restart to update"
+                };
+                if kit::button(ui, label, Kind::Primary, !offer.downloading).clicked() {
+                    state.update_requested = true;
+                }
+            }
+            if kit::button(
+                ui,
+                "Check for updates",
+                Kind::Secondary,
+                state.can_check_updates,
+            )
+            .clicked()
+            {
+                state.update_check_requested = true;
+            }
+        });
+        if let Some(log_dir) = &snapshot.log_dir {
+            kit::text(
+                ui,
+                &format!("Logs: {log_dir}"),
+                kit::regular(kit::XS),
+                p.text_tertiary,
+            );
+            if kit::button(ui, "Open the log folder", Kind::Secondary, true).clicked() {
+                out.push(Command::RevealLogs);
+            }
+        }
+    });
+
+    kit::card(ui, |ui| {
+        ui.spacing_mut().item_spacing.y = 8.0;
         kit::section(ui, "Claude Desktop config");
         kit::text(
             ui,
@@ -110,61 +167,6 @@ pub fn show(ui: &mut Ui, snapshot: &Snapshot, state: &mut State, out: &mut Vec<C
         );
         if let Some(warning) = &snapshot.runner_warning {
             kit::banner(ui, kit::Banner::Warn, warning, None);
-        }
-    });
-
-    kit::card(ui, |ui| {
-        ui.spacing_mut().item_spacing.y = 8.0;
-        kit::section(ui, "About");
-        kit::text(
-            ui,
-            &format!("Claude Toolkit {}", env!("CARGO_PKG_VERSION")),
-            kit::regular(kit::SM),
-            p.text_secondary,
-        );
-        ui.horizontal(|ui| {
-            if state.update_check == Checked::Checking {
-                ui.add(eframe::egui::Spinner::new().size(14.0));
-            }
-            kit::text(
-                ui,
-                &update_line(state),
-                kit::regular(kit::SM),
-                p.text_secondary,
-            );
-        });
-        ui.horizontal(|ui| {
-            if let Some(offer) = &state.update {
-                let label = if offer.failed {
-                    "Try again"
-                } else {
-                    "Restart to update"
-                };
-                if kit::button(ui, label, Kind::Primary, !offer.downloading).clicked() {
-                    state.update_requested = true;
-                }
-            }
-            if kit::button(
-                ui,
-                "Check for updates",
-                Kind::Secondary,
-                state.can_check_updates,
-            )
-            .clicked()
-            {
-                state.update_check_requested = true;
-            }
-        });
-        if let Some(log_dir) = &snapshot.log_dir {
-            kit::text(
-                ui,
-                &format!("Logs: {log_dir}"),
-                kit::regular(kit::XS),
-                p.text_tertiary,
-            );
-            if kit::button(ui, "Open the log folder", Kind::Secondary, true).clicked() {
-                out.push(Command::RevealLogs);
-            }
         }
     });
 }
