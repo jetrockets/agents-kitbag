@@ -173,6 +173,7 @@ impl Worker {
                         prefill: (integration.prefill)(server),
                         location: (integration.token != TokenSource::None)
                             .then(|| storage::location(server, self.backend.env.os).label()),
+                        hosted: server.url().is_some(),
                         health: self.health.get(key).cloned().unwrap_or(HealthView::Unknown),
                     })
                     .collect(),
