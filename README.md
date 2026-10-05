@@ -1,9 +1,9 @@
 # Agents Kitbag
 
-What your AI assistant is equipped with, set up from one window. Today that
-is MCP servers for Claude Desktop: Jira, Linear, Notion, Azure DevOps, Asana,
-GitHub and Figma, each with its token kept out of the config and checked that
-it still works. A native app for macOS, Windows and Linux, written in Rust on
+What your AI assistants are equipped with, set up from one window. Today that
+is MCP servers for Claude Desktop, Claude Code and Codex: Jira, Linear, Notion,
+Azure DevOps, Asana, GitHub and Figma, each with its token kept out of the
+config and checked that it still works. A native app for macOS, Windows and Linux, written in Rust on
 egui and [fastframe](https://github.com/crmne/fastframe).
 
 <picture>
@@ -39,6 +39,23 @@ in the applications menu.
 The MCP servers themselves need [Node.js](https://nodejs.org/) (`npx`), and
 Jira's needs [uv](https://docs.astral.sh/uv/) (`uvx`). The app says so when
 one is missing.
+
+## Assistants
+
+The list at the top of the window chooses whose servers are shown. Each
+assistant has servers, tokens and backups of its own.
+
+| Assistant | Where its servers are | Takes a change in |
+|---|---|---|
+| Claude Desktop | `claude_desktop_config.json` in its own folder | when it restarts |
+| Claude Code | `mcpServers` in `~/.claude.json` (every project) | in a new session |
+| Codex | `[mcp_servers]` in `~/.codex/config.toml` | in a new session |
+
+Everything else in those files is left as it was, comments in the TOML
+included. `CLAUDE_CONFIG_DIR` and `CODEX_HOME` are followed when the app's own
+environment has them. Checked on macOS with the real `claude` and `codex`
+reading files the app wrote; on Windows and Linux this is covered by tests
+only.
 
 ## Integrations
 

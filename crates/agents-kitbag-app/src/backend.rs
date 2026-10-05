@@ -3,6 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
+use agents_kitbag_core::assistant::Assistant;
 use agents_kitbag_core::config::ConfigFile;
 use agents_kitbag_core::exec::{CommandRunner, SystemRunner};
 use agents_kitbag_core::http::{Http, UreqHttp};
@@ -15,7 +16,10 @@ pub struct Backend {
     pub env: Env,
     pub runner: Box<dyn CommandRunner>,
     pub http: Box<dyn Http>,
-    pub config: ConfigFile,
+    /// The config of each assistant in [`Assistant::ALL`].
+    pub configs: Vec<ConfigFile>,
+    /// The assistant the window is looking at.
+    pub assistant: Assistant,
     pub runner_path: String,
     pub log_dir: Option<PathBuf>,
     /// `--demo`: nothing leaves the app, so nothing opens a browser either.
@@ -26,7 +30,8 @@ impl Backend {
     pub fn real(log_dir: Option<PathBuf>) -> anyhow::Result<Self> {
         let env = Env::current();
         Ok(Self {
-            config: ConfigFile::locate(&env),
+            configs: configs(&env),
+            assistant: Assistant::ClaudeDesktop,
             runner: Box::new(SystemRunner),
             http: Box::new(UreqHttp::new().map_err(anyhow::Error::msg)?),
             runner_path: runner_path(env.os).to_string_lossy().into_owned(),
@@ -34,6 +39,14 @@ impl Backend {
             log_dir,
             demo: false,
         })
+    }
+
+    /// The config of the assistant the window is looking at.
+    pub fn config(&self) -> &ConfigFile {
+        self.configs
+            .iter()
+            .find(|config| config.assistant() == self.assistant)
+            .expect("every assistant has a config")
     }
 
     /// Runs `work` with everything `agents-kitbag-core` reaches the outside through.
@@ -47,10 +60,18 @@ impl Backend {
             runner: &*self.runner,
             http: &*self.http,
             packages: &packages,
-            config: &self.config,
+            config: self.config(),
             runner_path: &self.runner_path,
         })
     }
+}
+
+/// Where each assistant keeps its servers on this machine.
+pub fn configs(env: &Env) -> Vec<ConfigFile> {
+    Assistant::ALL
+        .iter()
+        .map(|assistant| assistant.config(env))
+        .collect()
 }
 
 /// The runner sits beside the app: in `Contents/MacOS` of the bundle, or in

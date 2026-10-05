@@ -1,6 +1,7 @@
 //! What the window draws. The worker publishes a new one after everything
 //! it does; a view never asks the outside world anything.
 
+use agents_kitbag_core::assistant::Assistant;
 use agents_kitbag_core::gh;
 use agents_kitbag_core::health::Health;
 use agents_kitbag_core::integrations::Values;
@@ -61,6 +62,8 @@ pub struct Notice {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Snapshot {
     pub os: Os,
+    /// The assistant everything below is about.
+    pub assistant: Assistant,
     pub config_path: String,
     /// The config exists but cannot be used: nothing is written until it is fixed.
     pub config_error: Option<String>,
@@ -73,7 +76,7 @@ pub struct Snapshot {
     /// What the worker is doing that takes a while.
     pub busy: Option<String>,
     pub save: Option<SaveOutcome>,
-    /// The config changed since Claude Desktop last started.
+    /// The config changed since the assistant last read it.
     pub needs_restart: bool,
     /// Servers still launched through the Node runner, or a runner that moved.
     pub migration: Vec<String>,
@@ -89,6 +92,7 @@ impl Snapshot {
     pub fn empty(os: Os) -> Self {
         Self {
             os,
+            assistant: Assistant::ClaudeDesktop,
             config_path: String::new(),
             config_error: None,
             integrations: Vec::new(),

@@ -1,12 +1,14 @@
-//! Claude Desktop's config file: where it is, what servers it holds, and how
-//! to change it without losing anything else in it.
+//! An assistant's config file: where Claude Desktop's is, what servers a file
+//! holds, and how to change it without losing anything else in it.
 
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+use crate::assistant::Assistant;
 use crate::backup;
+use crate::codex;
 use crate::files;
 use crate::platform::{Env, Os};
 
@@ -127,18 +129,43 @@ fn msix_redirected(env: &Env) -> Option<PathBuf> {
 pub struct ConfigFile {
     path: PathBuf,
     os: Os,
+    assistant: Assistant,
 }
 
 impl ConfigFile {
+    /// Claude Desktop's config at this path.
     pub fn new(path: impl Into<PathBuf>, os: Os) -> Self {
+        Self::of(Assistant::ClaudeDesktop, path, os)
+    }
+
+    /// This assistant's config at this path.
+    pub fn of(assistant: Assistant, path: impl Into<PathBuf>, os: Os) -> Self {
         Self {
             path: path.into(),
             os,
+            assistant,
         }
     }
 
     pub fn locate(env: &Env) -> Self {
         Self::new(resolve_path(env), env.os)
+    }
+
+    pub fn assistant(&self) -> Assistant {
+        self.assistant
+    }
+
+    fn is_toml(&self) -> bool {
+        self.assistant == Assistant::Codex
+    }
+
+    /// The file as text; a missing one is empty.
+    fn text(&self) -> Result<String, String> {
+        match std::fs::read_to_string(&self.path) {
+            Ok(text) => Ok(text),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+            Err(error) => Err(format!("The config file cannot be read: {error}")),
+        }
     }
 
     pub fn path(&self) -> &Path {
@@ -166,6 +193,9 @@ impl ConfigFile {
 
     /// Every configured server, in the file's order.
     pub fn servers(&self) -> Result<Vec<(String, ServerConfig)>, String> {
+        if self.is_toml() {
+            return codex::servers(&self.text()?);
+        }
         Ok(servers_of(&self.read()?))
     }
 
@@ -179,14 +209,32 @@ impl ConfigFile {
 
     /// Adds or replaces one server and leaves every other key as it was.
     pub fn set_server(&self, key: &str, server: &ServerConfig) -> Result<(), String> {
+        if self.is_toml() {
+            return self.write_text(&codex::set_server(&self.text()?, key, server)?);
+        }
         let mut config = self.read()?;
-        let value = serde_json::to_value(server).map_err(|e| e.to_string())?;
+        let mut value = serde_json::to_value(server).map_err(|e| e.to_string())?;
+        // Claude Code names the transport of every server it writes.
+        if self.assistant == Assistant::ClaudeCode
+            && !server.command.is_empty()
+            && let Value::Object(entry) = &mut value
+            && !entry.contains_key("type")
+        {
+            entry.insert("type".to_owned(), Value::String("stdio".to_owned()));
+        }
         servers_mut(&mut config)?.insert(key.to_owned(), value);
         self.write(&config)
     }
 
     /// Removes these servers; returns the keys that were there.
     pub fn remove_servers(&self, keys: &[String]) -> Result<Vec<String>, String> {
+        if self.is_toml() {
+            let (text, removed) = codex::remove_servers(&self.text()?, keys)?;
+            if !removed.is_empty() {
+                self.write_text(&text)?;
+            }
+            return Ok(removed);
+        }
         let mut config = self.read()?;
         let servers = servers_mut(&mut config)?;
         let removed: Vec<String> = keys
@@ -203,6 +251,10 @@ impl ConfigFile {
     fn write(&self, config: &Map<String, Value>) -> Result<(), String> {
         let mut text = serde_json::to_string_pretty(config).map_err(|e| e.to_string())?;
         text.push('\n');
+        self.write_text(&text)
+    }
+
+    fn write_text(&self, text: &str) -> Result<(), String> {
         self.set_read_only(false);
         if let Err(error) = backup::backup_config(&self.path, self.os) {
             log::warn!("could not back up the config: {error}");
@@ -221,7 +273,7 @@ impl ConfigFile {
     /// restart. On Win 11 24H2 the same holds at the redirected path. The
     /// flag is cleared before each write and set again after.
     fn set_read_only(&self, read_only: bool) {
-        if self.os != Os::Windows {
+        if self.os != Os::Windows || self.assistant != Assistant::ClaudeDesktop {
             return;
         }
         let Ok(metadata) = std::fs::metadata(&self.path) else {
@@ -372,6 +424,60 @@ mod tests {
             .map(|(k, _)| k)
             .collect();
         assert_eq!(keys, ["jira-b"]);
+    }
+
+    #[test]
+    fn claude_code_gets_its_servers_with_their_transport_named() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".claude.json");
+        std::fs::write(
+            &path,
+            r#"{"numStartups": 7, "mcpServers": {"mine": {"type": "http", "url": "https://x"}}, "projects": {"/work": {}}}"#,
+        )
+        .unwrap();
+        let config = ConfigFile::of(Assistant::ClaudeCode, &path, Os::Mac);
+        config.set_server("asana", &asana()).unwrap();
+
+        let written: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(written["numStartups"], 7);
+        assert_eq!(written["projects"], serde_json::json!({"/work": {}}));
+        assert_eq!(written["mcpServers"]["mine"]["url"], "https://x");
+        assert_eq!(written["mcpServers"]["asana"]["type"], "stdio");
+        assert_eq!(written["mcpServers"]["asana"]["command"], "npx");
+        let keys: Vec<_> = config
+            .servers()
+            .unwrap()
+            .into_iter()
+            .map(|(k, _)| k)
+            .collect();
+        assert_eq!(keys, ["mine", "asana"]);
+    }
+
+    #[test]
+    fn codex_keeps_its_servers_in_toml() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "# mine\nmodel = \"gpt-5\"\n").unwrap();
+        let config = ConfigFile::of(Assistant::Codex, &path, Os::Windows);
+        assert_eq!(config.servers().unwrap(), []);
+        config.set_server("asana", &asana()).unwrap();
+        assert_eq!(config.server("asana").unwrap(), Some(asana()));
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.starts_with("# mine\nmodel = \"gpt-5\"\n"), "{text}");
+        assert!(text.contains("[mcp_servers.asana]"));
+        // Only Claude Desktop's config is locked against its own rewrites.
+        assert!(!std::fs::metadata(&path).unwrap().permissions().readonly());
+        assert_eq!(backup::count(config.path()), 1);
+
+        assert_eq!(
+            config.remove_servers(&["asana".to_owned()]).unwrap(),
+            ["asana"]
+        );
+        assert_eq!(config.servers().unwrap(), []);
+
+        std::fs::write(&path, "[broken").unwrap();
+        assert!(config.set_server("asana", &asana()).is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "[broken");
     }
 
     #[test]

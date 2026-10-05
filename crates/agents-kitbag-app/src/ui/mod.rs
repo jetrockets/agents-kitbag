@@ -7,6 +7,7 @@
 //!
 //! Views draw a [`Snapshot`] and return [`Command`]s. They never wait.
 
+use agents_kitbag_core::assistant::Loads;
 use agents_kitbag_core::claude;
 use agents_kitbag_core::integrations::{self, Integration, Values};
 use agents_kitbag_core::platform::Os;
@@ -269,21 +270,41 @@ pub fn show(ui: &mut Ui, snapshot: &Snapshot, state: &mut State) -> Vec<Command>
 }
 
 fn footer_height(snapshot: &Snapshot) -> f32 {
-    match (snapshot.needs_restart, snapshot.os, &snapshot.busy) {
-        (true, Os::Windows | Os::Linux, _) => 112.0,
-        (true, Os::Mac, _) | (false, _, Some(_)) => 54.0,
+    let by_hand = snapshot.assistant.loads() == Loads::OnRestart && snapshot.os != Os::Mac;
+    match (snapshot.needs_restart, by_hand, &snapshot.busy) {
+        (true, true, _) => 112.0,
+        (true, false, _) | (false, _, Some(_)) => 54.0,
         (false, _, None) => 0.0,
     }
 }
 
-/// What the worker is doing, or the reminder that Claude Desktop only reads
-/// its config when it starts.
+/// What the worker is doing, or the reminder of when the assistant takes the
+/// change in: Claude Desktop when it starts, the others in a new session.
 fn footer(ui: &mut Ui, snapshot: &Snapshot, out: &mut Vec<Command>) {
     let p = palette(ui.ctx());
     if let Some(busy) = &snapshot.busy {
         ui.horizontal_centered(|ui| {
             ui.spinner();
             kit::text(ui, busy, kit::regular(kit::SM), p.text_secondary);
+        });
+        return;
+    }
+    if snapshot.assistant.loads() == Loads::InNewSessions {
+        ui.horizontal_centered(|ui| {
+            kit::text(
+                ui,
+                &format!(
+                    "New {} sessions load the changes. One that is open keeps what it has.",
+                    snapshot.assistant.name()
+                ),
+                kit::regular(kit::SM),
+                p.text_secondary,
+            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if kit::button(ui, "Got it", Kind::Secondary, true).clicked() {
+                    out.push(Command::RestartDone);
+                }
+            });
         });
         return;
     }

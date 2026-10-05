@@ -1,12 +1,13 @@
 //! The one thread that touches the outside world: the config, the stores,
-//! the services, Claude Desktop. It takes `Command`s from the window and
+//! the services, the assistants. It takes `Command`s from the window and
 //! publishes a `Snapshot` after everything it does.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 
+use agents_kitbag_core::assistant::{Assistant, Loads};
 use agents_kitbag_core::claude::{self, Restart};
 use agents_kitbag_core::integrations::{self, TokenSource, Values};
 use agents_kitbag_core::platform::{self, Os};
@@ -23,6 +24,8 @@ use crate::snapshot::{
 pub enum Command {
     /// Read the config again.
     Refresh,
+    /// Look at another assistant's servers.
+    UseAssistant(Assistant),
     /// Probe the credential stores and the GitHub CLI.
     LoadStores,
     CheckAll,
@@ -37,7 +40,8 @@ pub enum Command {
     Delete(Vec<String>),
     PurgeBackups,
     RestartClaude,
-    /// Windows: the person restarted Claude Desktop themselves.
+    /// The person restarted Claude Desktop themselves, or has read that new
+    /// sessions load the change.
     RestartDone,
     Migrate,
     InstallGh,
@@ -78,11 +82,12 @@ impl Command {
             Command::Delete(keys) => format!("delete {}", keys.join(", ")),
             Command::OpenUrl(url) => format!("open {url}"),
             Command::Refresh => "read the config again".to_owned(),
+            Command::UseAssistant(assistant) => format!("look at {}", assistant.name()),
             Command::LoadStores => "look for credential stores".to_owned(),
             Command::CheckAll => "check every token".to_owned(),
             Command::PurgeBackups => "delete the config backups".to_owned(),
             Command::RestartClaude => "restart Claude Desktop".to_owned(),
-            Command::RestartDone => "Claude Desktop was restarted by hand".to_owned(),
+            Command::RestartDone => "the change was acknowledged".to_owned(),
             Command::Migrate => "move servers onto the built-in runner".to_owned(),
             Command::InstallGh => "install the GitHub CLI".to_owned(),
             Command::GhLogin => "sign in to the GitHub CLI".to_owned(),
@@ -96,7 +101,13 @@ impl Command {
 
 pub struct Worker {
     backend: Backend,
+    /// The health of the servers of the assistant in view.
     health: HashMap<String, HealthView>,
+    /// What is known of the assistants not in view, so coming back to one
+    /// does not ask every service again.
+    set_aside: HashMap<Assistant, HashMap<String, HealthView>>,
+    /// The assistants not in view whose config changed since they read it.
+    unread: HashSet<Assistant>,
     state: Snapshot,
     shared: Arc<Mutex<Snapshot>>,
     wake: Box<dyn Fn() + Send>,
@@ -105,7 +116,8 @@ pub struct Worker {
 impl Worker {
     pub fn new(backend: Backend, shared: Arc<Mutex<Snapshot>>, wake: Box<dyn Fn() + Send>) -> Self {
         let mut state = Snapshot::empty(backend.env.os);
-        state.config_path = backend.config.path().to_string_lossy().into_owned();
+        state.assistant = backend.assistant;
+        state.config_path = backend.config().path().to_string_lossy().into_owned();
         state.runner_path = backend.runner_path.clone();
         state.runner_warning = (!backend.demo)
             .then(|| backend::runner_warning(&backend.runner_path))
@@ -122,6 +134,8 @@ impl Worker {
         Self {
             backend,
             health: HashMap::new(),
+            set_aside: HashMap::new(),
+            unread: HashSet::new(),
             state,
             shared,
             wake,
@@ -130,7 +144,7 @@ impl Worker {
 
     /// Reads the config and tells the window.
     fn publish(&mut self) {
-        let servers = match self.backend.config.servers() {
+        let servers = match self.backend.config().servers() {
             Ok(servers) => {
                 self.state.config_error = None;
                 servers
@@ -169,7 +183,7 @@ impl Worker {
             .collect();
         self.state.migration =
             migrate::pending(&servers, &self.backend.runner_path, self.backend.env.os);
-        self.state.backups = backup::count(self.backend.config.path());
+        self.state.backups = backup::count(self.backend.config().path());
         *self.shared.lock().expect("snapshot") = self.state.clone();
         (self.wake)();
     }
@@ -201,6 +215,7 @@ impl Worker {
                     self.state.notice = None;
                 }
             }
+            Command::UseAssistant(assistant) => self.use_assistant(assistant),
             Command::LoadStores => self.load_stores(),
             Command::CheckAll => self.check(None),
             Command::Check(key) => self.check(Some(key)),
@@ -213,7 +228,7 @@ impl Worker {
             } => {
                 self.save(id, integration, instance, values, store);
             }
-            Command::Delete(keys) => match self.backend.config.remove_servers(&keys) {
+            Command::Delete(keys) => match self.backend.config().remove_servers(&keys) {
                 Ok(removed) if removed.is_empty() => {}
                 Ok(removed) => {
                     for key in &removed {
@@ -225,7 +240,7 @@ impl Worker {
                 Err(error) => self.notice(Tone::Bad, error),
             },
             Command::PurgeBackups => {
-                match backup::purge(self.backend.config.path(), self.backend.env.os) {
+                match backup::purge(self.backend.config().path(), self.backend.env.os) {
                     Ok(0) => self.notice(Tone::Good, "No backups to delete"),
                     Ok(count) => self.notice(Tone::Good, format!("Deleted {count} backup(s)")),
                     Err(error) => {
@@ -237,7 +252,7 @@ impl Worker {
             Command::RestartDone => self.state.needs_restart = false,
             Command::Migrate => {
                 match migrate::migrate(
-                    &self.backend.config,
+                    self.backend.config(),
                     &self.backend.runner_path,
                     self.backend.env.os,
                 ) {
@@ -285,7 +300,7 @@ impl Worker {
                 return;
             }
             Command::RevealConfig => {
-                let folder = self.backend.config.path().parent().map(Path::to_path_buf);
+                let folder = self.backend.config().path().parent().map(Path::to_path_buf);
                 self.reveal(folder.as_deref());
                 return;
             }
@@ -296,6 +311,30 @@ impl Worker {
             }
         }
         self.publish();
+    }
+
+    /// Turns to another assistant. What was known of the one left behind is
+    /// kept; one seen for the first time has its tokens checked.
+    fn use_assistant(&mut self, assistant: Assistant) {
+        let left = self.backend.assistant;
+        if assistant == left {
+            return;
+        }
+        self.set_aside
+            .insert(left, std::mem::take(&mut self.health));
+        if std::mem::take(&mut self.state.needs_restart) {
+            self.unread.insert(left);
+        }
+        self.backend.assistant = assistant;
+        self.state.assistant = assistant;
+        self.state.config_path = self.backend.config().path().to_string_lossy().into_owned();
+        self.state.config_error = None;
+        self.state.needs_restart = self.unread.remove(&assistant);
+        log::info!("config: {}", self.state.config_path);
+        match self.set_aside.remove(&assistant) {
+            Some(health) => self.health = health,
+            None => self.check(None),
+        }
     }
 
     fn reveal(&self, folder: Option<&Path>) {
@@ -344,7 +383,7 @@ impl Worker {
     fn check(&mut self, only: Option<String>) {
         let servers: Vec<_> = self
             .backend
-            .config
+            .config()
             .servers()
             .unwrap_or_default()
             .into_iter()
@@ -425,6 +464,10 @@ impl Worker {
     }
 
     fn restart(&mut self) {
+        if self.backend.assistant.loads() == Loads::InNewSessions {
+            self.state.needs_restart = false;
+            return;
+        }
         self.busy("Restarting Claude Desktop...");
         let outcome = self
             .backend
@@ -539,6 +582,65 @@ mod tests {
         );
         assert_eq!(jira.location.as_deref(), Some("macOS Keychain"));
         assert_eq!(jira.health, HealthView::Unknown);
+    }
+
+    #[test]
+    fn another_assistant_has_servers_and_a_config_of_its_own() {
+        let (mut worker, shared, dir) = worker();
+        worker.handle(Command::CheckAll);
+        worker.handle(Command::UseAssistant(Assistant::Codex));
+        let snapshot = shared.lock().unwrap().clone();
+        assert_eq!(snapshot.assistant, Assistant::Codex);
+        assert!(Path::new(&snapshot.config_path).ends_with(".codex/config.toml"));
+        assert!(snapshot.integration("jira").unwrap().instances.is_empty());
+        // Seen for the first time, its tokens are checked.
+        assert_eq!(status(&snapshot, "figma", "figma"), Some(Status::Ok));
+
+        worker.handle(Command::Delete(vec!["figma".into()]));
+        let snapshot = shared.lock().unwrap().clone();
+        assert!(snapshot.needs_restart);
+        let text = std::fs::read_to_string(dir.path().join(".codex/config.toml")).unwrap();
+        assert!(!text.contains("figma"), "{text}");
+
+        // Claude Desktop was not touched, and what was known of it is kept.
+        worker.handle(Command::UseAssistant(Assistant::ClaudeDesktop));
+        let snapshot = shared.lock().unwrap().clone();
+        assert!(!snapshot.needs_restart);
+        assert_eq!(status(&snapshot, "jira", "jira-acme"), Some(Status::Ok));
+        assert!(snapshot.config_path.ends_with("claude_desktop_config.json"));
+
+        // Codex still has its change to take in.
+        worker.handle(Command::UseAssistant(Assistant::Codex));
+        assert!(shared.lock().unwrap().needs_restart);
+        worker.handle(Command::RestartClaude);
+        assert!(!shared.lock().unwrap().needs_restart);
+    }
+
+    #[test]
+    fn a_server_saved_for_claude_code_names_its_transport_and_its_own_secret() {
+        let (mut worker, shared, dir) = worker();
+        worker.handle(Command::UseAssistant(Assistant::ClaudeCode));
+        worker.handle(Command::Save {
+            id: 1,
+            integration: "asana",
+            instance: None,
+            values: [("token".to_owned(), "tok".to_owned())]
+                .into_iter()
+                .collect(),
+            store: StoreChoice::System,
+        });
+        let snapshot = shared.lock().unwrap().clone();
+        assert!(snapshot.save.unwrap().result.is_ok());
+        let config: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(dir.path().join(".claude.json")).unwrap())
+                .unwrap();
+        let asana = &config["mcpServers"]["asana"];
+        assert_eq!(asana["type"], "stdio");
+        assert_eq!(
+            asana["args"][1],
+            "ASANA_ACCESS_TOKEN=keychain:agents-kitbag-claude-code-asana"
+        );
+        assert_eq!(config["mcpServers"]["notion-acme"]["type"], "stdio");
     }
 
     #[test]

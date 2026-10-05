@@ -6,6 +6,7 @@
 
 use std::sync::{Arc, Mutex};
 
+use agents_kitbag_core::assistant::Assistant;
 use agents_kitbag_core::gh;
 use agents_kitbag_core::platform::Os;
 use agents_kitbag_core::setup::Done;
@@ -131,7 +132,7 @@ fn the_sidebar_says_how_each_integration_is_doing() {
 #[test]
 fn the_rail_goes_between_the_sections_and_the_settings() {
     let mut h = rig(demo_snapshot());
-    assert!(has(&h, "Claude Desktop"));
+    assert!(has(&h, "Assistant"));
     click(&mut h, "Settings");
     assert_eq!(h.state().ui.screen, Screen::Settings);
     // The settings take the place of the section's list.
@@ -142,6 +143,28 @@ fn the_rail_goes_between_the_sections_and_the_settings() {
     step(&mut h);
     assert_eq!(h.state().ui.screen, Screen::Section(Section::Servers));
     assert!(has(&h, "Jira, working"));
+}
+
+#[test]
+fn the_list_is_of_the_chosen_assistants_servers() {
+    let mut h = rig(demo_snapshot());
+    h.get_by_label("Assistant").click();
+    step(&mut h);
+    click(&mut h, "Codex");
+    assert_eq!(commands(&mut h), [Command::UseAssistant(Assistant::Codex)]);
+
+    let mut snapshot = demo_snapshot();
+    snapshot.assistant = Assistant::Codex;
+    snapshot.needs_restart = true;
+    let mut h = rig(snapshot);
+    click(&mut h, "Notion, not configured");
+    assert!(has(&h, "Connect Notion to Codex"));
+    assert!(has(
+        &h,
+        "New Codex sessions load the changes. One that is open keeps what it has."
+    ));
+    click(&mut h, "Got it");
+    assert_eq!(commands(&mut h), [Command::RestartDone]);
 }
 
 #[test]

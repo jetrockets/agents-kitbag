@@ -1,6 +1,7 @@
 //! The MCP servers section's list: the assistant they belong to, and each
 //! integration with a mark for the state of its tokens.
 
+use agents_kitbag_core::assistant::Assistant;
 use agents_kitbag_core::health::Status;
 use agents_kitbag_core::integrations;
 use eframe::egui::{self, Align2, Color32, Id, Response, Sense, Stroke, Ui, vec2};
@@ -110,24 +111,58 @@ fn row(
     (rect, response)
 }
 
+/// Whose servers the list shows, and the way to another assistant's.
+fn assistants(ui: &mut Ui, snapshot: &Snapshot, state: &mut State, out: &mut Vec<Command>) {
+    let p = palette(ui.ctx());
+    let mut chosen = snapshot.assistant;
+    ui.scope(|ui| {
+        ui.spacing_mut().button_padding = vec2(8.0, 6.0);
+        ui.spacing_mut().item_spacing.y = 4.0;
+        egui::ComboBox::from_id_salt("assistant")
+            .width(ui.available_width())
+            .selected_text(
+                egui::RichText::new(snapshot.assistant.name())
+                    .font(kit::semibold(kit::BASE))
+                    .color(p.text),
+            )
+            .show_ui(ui, |ui| {
+                for assistant in Assistant::ALL {
+                    ui.selectable_value(
+                        &mut chosen,
+                        *assistant,
+                        egui::RichText::new(assistant.name()).font(kit::regular(kit::SM)),
+                    );
+                }
+            })
+            .response
+            .widget_info(|| {
+                egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, true, "Assistant")
+            });
+    });
+    if chosen != snapshot.assistant {
+        // A form or a question belongs to the assistant it was opened for.
+        state.form = None;
+        state.confirm = None;
+        out.push(Command::UseAssistant(chosen));
+    }
+}
+
 pub fn show(ui: &mut Ui, snapshot: &Snapshot, state: &mut State, out: &mut Vec<Command>) {
     let p = palette(ui.ctx());
     ui.spacing_mut().item_spacing.y = 2.0;
 
-    ui.add_space(4.0);
+    ui.add_space(2.0);
+    assistants(ui, snapshot, state, out);
     ui.horizontal(|ui| {
         ui.add_space(8.0);
-        ui.vertical(|ui| {
-            kit::text(ui, "Claude Desktop", kit::semibold(kit::BASE), p.text);
-            kit::text(
-                ui,
-                Section::Servers.name(),
-                kit::regular(kit::XS),
-                p.text_tertiary,
-            );
-        });
+        kit::text(
+            ui,
+            Section::Servers.name(),
+            kit::regular(kit::XS),
+            p.text_tertiary,
+        );
     });
-    ui.add_space(14.0);
+    ui.add_space(10.0);
 
     for integration in integrations::ALL {
         let view = snapshot.integration(integration.key);

@@ -13,6 +13,9 @@ their tokens, and offers to move servers off `node .../secret-runner.js`.
   (every request). Tests answer for both; nothing in a test touches the real
   credential store, network or config, except the few `#[ignore]`d ones named
   under Checks.
+- An assistant is a variant of `assistant::Assistant`: its config's path and
+  format, how its tokens are named, when it takes a change in. `ConfigFile`
+  reads and writes all of them; Codex's TOML is edited in place (`codex`).
 - An integration is a value (`integrations::Integration`): its fields, how
   its token is validated, the server config it becomes, how that token is
   checked later. A new one is one file and one line in `integrations::ALL`.
