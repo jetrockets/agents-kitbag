@@ -9,6 +9,7 @@ use eframe::egui;
 use toolkit_core::integrations;
 
 use crate::backend::Backend;
+use crate::instance::{self, Claim, Instance};
 use crate::updates::{self, Updates};
 use crate::window::{Mode, Opening, Window};
 use crate::worker::Handle;
@@ -85,6 +86,17 @@ pub fn run() -> ExitCode {
     let cli = Cli::parse_from(&launch.arguments);
     let mode = cli.mode();
     let demo = mode != Mode::Normal;
+    // Before the log is opened: a second start must not empty the log of
+    // the copy that is running. The demo is its own world and may run beside
+    // the app, or beside another demo.
+    let instance = match data_dir()
+        .filter(|_| !demo)
+        .map(|dir| instance::claim(&dir))
+    {
+        Some(Claim::Second) => return ExitCode::SUCCESS,
+        Some(Claim::First(instance)) => Some(instance),
+        Some(Claim::Unguarded) | None => None,
+    };
     start_logging(demo, cli.verbose);
     log::info!(
         "Claude Toolkit {} on {} {}",
@@ -95,7 +107,7 @@ pub fn run() -> ExitCode {
     match cli
         .opening()
         .map_err(anyhow::Error::msg)
-        .and_then(|opening| open_window(mode, &opening, launch.receipt))
+        .and_then(|opening| open_window(mode, &opening, launch.receipt, instance))
     {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
@@ -123,9 +135,14 @@ fn demo_folder() -> PathBuf {
     folder
 }
 
-fn log_dir() -> Option<PathBuf> {
+/// The app's own folder: the log, and the lock of the one running copy.
+fn data_dir() -> Option<PathBuf> {
     directories::ProjectDirs::from("com", "jetrockets", "claude-toolkit")
-        .map(|dirs| dirs.data_local_dir().join("logs"))
+        .map(|dirs| dirs.data_local_dir().to_path_buf())
+}
+
+fn log_dir() -> Option<PathBuf> {
+    data_dir().map(|dir| dir.join("logs"))
 }
 
 pub fn options() -> eframe::NativeOptions {
@@ -145,6 +162,7 @@ fn open_window(
     mode: Mode,
     opening: &Opening,
     receipt: Option<fastframe_update::Receipt>,
+    instance: Option<Instance>,
 ) -> anyhow::Result<()> {
     let demo = mode != Mode::Normal;
     let backend = if demo {
@@ -167,6 +185,9 @@ fn open_window(
                         log::warn!("could not acknowledge the update: {error:#}");
                     }
                 });
+            }
+            if let Some(instance) = instance {
+                instance.watch(cc.egui_ctx.clone());
             }
             let ctx = cc.egui_ctx.clone();
             let worker = Handle::spawn(backend, Box::new(move || ctx.request_repaint()));

@@ -120,6 +120,8 @@ impl eframe::App for Window {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let snapshot = self.worker.snapshot();
         self.ui.update = self.updates.offer();
+        self.ui.update_check = self.updates.checked();
+        self.ui.can_check_updates = self.updates.can_check();
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE)
             .show(ui, |ui| {
@@ -129,6 +131,9 @@ impl eframe::App for Window {
             });
         if self.ui.take_update_request() {
             self.updates.install();
+        }
+        if self.ui.take_update_check_request() {
+            self.updates.check_now();
         }
     }
 }

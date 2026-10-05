@@ -445,3 +445,63 @@ fn an_update_is_offered_and_asked_for() {
     click(&mut h, "Restart to update");
     assert!(h.state_mut().ui.take_update_request());
 }
+
+#[test]
+fn the_about_card_says_how_the_last_look_for_an_update_ended() {
+    use crate::updates::{Checked, Offer};
+    let mut h = rig(demo_snapshot());
+    click(&mut h, "Settings");
+    assert!(has(
+        &h,
+        "Updates are looked for when the app starts and every six hours."
+    ));
+    assert!(
+        h.get_by_label("Check for updates")
+            .accesskit_node()
+            .is_disabled(),
+        "nothing to ask in the demo"
+    );
+
+    for (checked, line) in [
+        (Checked::Checking, "Looking for a newer version..."),
+        (Checked::UpToDate, "This is the newest version."),
+        (
+            Checked::Unreachable("The update server answered 404".into()),
+            "Could not check for updates: The update server answered 404",
+        ),
+        (
+            Checked::Elsewhere {
+                version: "0.24.0".into(),
+                reason: "Move the app to Applications, then open it to update.".into(),
+            },
+            "Version 0.24.0 is out, but this copy does not update itself. Move the app to Applications, then open it to update.",
+        ),
+    ] {
+        h.state_mut().ui.update_check = checked;
+        step(&mut h);
+        assert!(has(&h, line), "{line}");
+    }
+
+    h.state_mut().ui.update_check = Checked::Available;
+    h.state_mut().ui.update = Some(Offer {
+        version: "0.24.0".into(),
+        downloading: false,
+        failed: false,
+    });
+    step(&mut h);
+    assert!(has(&h, "Version 0.24.0 is available."));
+}
+
+#[test]
+fn a_look_for_updates_can_be_asked_for() {
+    use crate::updates::Checked;
+    let mut h = rig(demo_snapshot());
+    click(&mut h, "Settings");
+    h.state_mut().ui.can_check_updates = true;
+    h.state_mut().ui.update_check = Checked::UpToDate;
+    step(&mut h);
+    assert!(!h.state_mut().ui.take_update_check_request());
+    click(&mut h, "Check for updates");
+    assert!(h.state_mut().ui.take_update_check_request());
+    assert!(!h.state_mut().ui.take_update_check_request(), "asked once");
+}

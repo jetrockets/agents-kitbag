@@ -11,7 +11,7 @@ use toolkit_core::storage::StoreChoice;
 
 use crate::snapshot::Snapshot;
 use crate::theme::palette;
-use crate::updates::Offer;
+use crate::updates::{Checked, Offer};
 use crate::worker::Command;
 
 mod detail;
@@ -95,6 +95,11 @@ pub struct State {
     /// A newer release, set by the window each frame.
     pub update: Option<Offer>,
     update_requested: bool,
+    /// How the last look for a newer release ended, set by the window.
+    pub update_check: Checked,
+    /// Whether "Check for updates" can be clicked now.
+    pub can_check_updates: bool,
+    update_check_requested: bool,
 }
 
 impl Default for State {
@@ -107,6 +112,9 @@ impl Default for State {
             next_save: 1,
             update: None,
             update_requested: false,
+            update_check: Checked::Never,
+            can_check_updates: false,
+            update_check_requested: false,
         }
     }
 }
@@ -115,6 +123,11 @@ impl State {
     /// Whether "Update" was clicked since the last call.
     pub fn take_update_request(&mut self) -> bool {
         std::mem::take(&mut self.update_requested)
+    }
+
+    /// Whether "Check for updates" was clicked since the last call.
+    pub fn take_update_check_request(&mut self) -> bool {
+        std::mem::take(&mut self.update_check_requested)
     }
 
     /// Opens the selected integration's setup form.

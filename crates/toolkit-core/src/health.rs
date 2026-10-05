@@ -137,10 +137,24 @@ impl HealthCtx<'_> {
                 "The credential store has no {reference}. Set it up again."
             ));
         }
-        match integrations::for_config_key(key) {
+        let health = match integrations::for_config_key(key) {
             Some(integration) => (integration.check)(server, self),
-            None => Health::skip("Not a toolkit integration"),
+            None => return Health::skip("Not a toolkit integration"),
+        };
+        // 1Password answered the vault list but not the read: it locked in
+        // between, or the prompt was dismissed. The token is not missing.
+        if op::is_wrapped(server)
+            && health.status == Status::Error
+            && health
+                .detail
+                .as_deref()
+                .is_some_and(|d| d.contains("missing"))
+        {
+            return Health::skip(
+                "1Password did not hand over the token. Unlock it and check again.",
+            );
         }
+        health
     }
 
     /// Every server's health, checked side by side.
@@ -348,6 +362,28 @@ mod tests {
                 .as_deref()
                 .unwrap()
                 .contains("1Password is locked")
+        );
+        assert!(http.requests().is_empty());
+    }
+
+    #[test]
+    fn a_1password_that_will_not_read_is_not_a_missing_token() {
+        // The vaults list, but the read is refused.
+        let runner = FakeRunner::default().on("op", "vault", ok("[]")).on(
+            "op",
+            "read",
+            fail(1, "authorization prompt dismissed"),
+        );
+        let (env, http) = (env(), FakeHttp::default());
+        let server =
+            op::wrap_with_op_run(asana("op://Private/x/credential"), "/opt/homebrew/bin/op");
+        let health = ctx(&env, &runner, &http).check("asana", &server, true);
+        assert_eq!(health.status, Status::Skip);
+        assert!(
+            health
+                .detail
+                .unwrap()
+                .contains("1Password did not hand over the token")
         );
         assert!(http.requests().is_empty());
     }
