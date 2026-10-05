@@ -41,8 +41,11 @@ impl FakeRunner {
     /// Answers any call whose program ends with `program` and whose
     /// arguments contain `arg`.
     pub fn on(mut self, program: &'static str, arg: &'static str, output: Output) -> Self {
-        self.rules.push(Box::new(move |p, args, _| {
-            (p.ends_with(program) && args.iter().any(|a| a.contains(arg))).then(|| output.clone())
+        self.rules.push(Box::new(move |p, args, input| {
+            // A command can also arrive on stdin (`security -i`).
+            let named = args.iter().any(|a| a.contains(arg))
+                || input.is_some_and(|input| input.starts_with(arg));
+            (p.ends_with(program) && named).then(|| output.clone())
         }));
         self
     }

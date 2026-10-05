@@ -264,6 +264,22 @@ fn checking_one_server_or_all_of_them() {
 }
 
 #[test]
+fn with_no_server_there_is_nothing_to_check_and_the_row_says_so() {
+    let mut snapshot = demo_snapshot();
+    for integration in &mut snapshot.integrations {
+        integration.instances.clear();
+    }
+    let mut h = rig(snapshot);
+    assert!(
+        h.get_by_label("Check all tokens")
+            .accesskit_node()
+            .is_disabled()
+    );
+    click(&mut h, "Check all tokens");
+    assert!(commands(&mut h).is_empty());
+}
+
+#[test]
 fn deleting_takes_a_second_click() {
     let mut h = rig(demo_snapshot());
     click(&mut h, "Delete");

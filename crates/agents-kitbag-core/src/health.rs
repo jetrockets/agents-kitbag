@@ -60,11 +60,28 @@ pub fn classify(response: &Result<Response, String>) -> Health {
     match response {
         Err(error) => Health::error(error.clone()),
         Ok(response) if response.ok() => Health::ok(),
+        // A 403 is not always the token's fault: GitHub answers it for a
+        // rate limit and for an organization that wants single sign-on.
+        Ok(response) if response.status == 403 && not_the_tokens_fault(&response.body) => {
+            Health::error(format!(
+                "HTTP 403: {}",
+                response.json()["message"]
+                    .as_str()
+                    .unwrap_or("the service refused for now")
+            ))
+        }
         Ok(response) if matches!(response.status, 401 | 403) => {
             Health::expired(format!("HTTP {}", response.status))
         }
         Ok(response) => Health::error(format!("HTTP {}", response.status)),
     }
+}
+
+fn not_the_tokens_fault(body: &str) -> bool {
+    let body = body.to_ascii_lowercase();
+    ["rate limit", "saml", "single sign-on", "sso"]
+        .iter()
+        .any(|sign| body.contains(sign))
 }
 
 /// The token in `--header "Authorization: Bearer <token>"`.
@@ -134,13 +151,13 @@ impl HealthCtx<'_> {
         // 1Password is locked, which sends people off re-running setup for
         // nothing.
         if op::is_wrapped(server) && !op_usable {
-            return Health::skip("1Password is locked. Unlock it to check.");
+            return Health::error("1Password is locked. Unlock it to check.");
         }
         // A runner-backed server whose secret cannot be read will not start.
         if let Some(reference) = runner::binding(server, None)
             && self.stored(&reference).is_none()
         {
-            return Health::skip(format!(
+            return Health::error(format!(
                 "The credential store has no {reference}. Set it up again."
             ));
         }
@@ -157,7 +174,7 @@ impl HealthCtx<'_> {
                 .as_deref()
                 .is_some_and(|d| d.contains("missing"))
         {
-            return Health::skip(
+            return Health::error(
                 "1Password did not hand over the token. Unlock it and check again.",
             );
         }
@@ -373,13 +390,36 @@ mod tests {
     }
 
     #[test]
+    fn a_403_for_a_rate_limit_or_single_sign_on_is_not_an_expired_token() {
+        let refused = |body: &str| {
+            classify(&Ok(Response {
+                status: 403,
+                body: body.to_owned(),
+            }))
+        };
+        let limited = refused(r#"{"message":"API rate limit exceeded for user."}"#);
+        assert_eq!(limited.status, Status::Error);
+        assert_eq!(
+            limited.detail.as_deref(),
+            Some("HTTP 403: API rate limit exceeded for user.")
+        );
+        let sso = refused(r#"{"message":"Resource protected by organization SAML enforcement."}"#);
+        assert_eq!(sso.status, Status::Error);
+        assert_eq!(
+            refused(r#"{"message":"Bad credentials"}"#).status,
+            Status::Expired
+        );
+        assert_eq!(refused("Invalid token").status, Status::Expired);
+    }
+
+    #[test]
     fn a_locked_1password_is_reported_as_locked_not_as_a_missing_token() {
         let runner = FakeRunner::default().on("op", "vault", fail(1, "locked"));
         let (env, http) = (env(), FakeHttp::default());
         let server =
             op::wrap_with_op_run(asana("op://Private/x/credential"), "/opt/homebrew/bin/op");
         let results = ctx(&env, &runner, &http).check_all(&[("asana".to_owned(), server)]);
-        assert_eq!(results[0].1.status, Status::Skip);
+        assert_eq!(results[0].1.status, Status::Error);
         assert!(
             results[0]
                 .1
@@ -403,7 +443,7 @@ mod tests {
         let server =
             op::wrap_with_op_run(asana("op://Private/x/credential"), "/opt/homebrew/bin/op");
         let health = ctx(&env, &runner, &http).check("asana", &server, true);
-        assert_eq!(health.status, Status::Skip);
+        assert_eq!(health.status, Status::Error);
         assert!(
             health
                 .detail
@@ -422,7 +462,7 @@ mod tests {
             ["--secret", "T=keychain:agents-kitbag-asana", "--", "npx"],
         );
         let health = ctx(&env, &runner, &http).check("asana", &server, false);
-        assert_eq!(health.status, Status::Skip);
+        assert_eq!(health.status, Status::Error);
         assert!(
             health
                 .detail

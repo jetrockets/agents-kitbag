@@ -33,7 +33,11 @@ pub struct Env {
 
 impl Env {
     pub fn current() -> Self {
-        let vars: HashMap<String, String> = std::env::vars().collect();
+        // Not `vars()`: it panics on a variable that is not Unicode, and one
+        // such variable in the environment must not stop the runner.
+        let vars: HashMap<String, String> = std::env::vars_os()
+            .filter_map(|(name, value)| Some((name.into_string().ok()?, value.into_string().ok()?)))
+            .collect();
         let home = vars
             .get(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
             .map(PathBuf::from)

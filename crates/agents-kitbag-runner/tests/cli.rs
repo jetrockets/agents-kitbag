@@ -75,6 +75,64 @@ fn on_windows_the_server_runs_with_its_arguments_stdio_and_exit_code() {
     );
 }
 
+/// The runner stays the server's parent on Windows; ending the runner must
+/// end the server too.
+#[cfg(windows)]
+#[test]
+fn on_windows_a_runner_that_is_ended_takes_the_server_with_it() {
+    use std::time::{Duration, Instant};
+
+    let dir = std::env::temp_dir().join(format!("agents-kitbag-job-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let pid_file = dir.join("server.pid");
+    let script = format!(
+        "$PID | Out-File -Encoding ascii '{}'; Start-Sleep -Seconds 120",
+        pid_file.display()
+    );
+    let mut runner = runner()
+        .args(["--", "powershell", "-NoProfile", "-Command", &script])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+
+    let started = Instant::now();
+    let pid = loop {
+        if let Ok(text) = std::fs::read_to_string(&pid_file)
+            && let Ok(pid) = text.trim().parse::<u32>()
+        {
+            break pid;
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(60),
+            "the server never started"
+        );
+        std::thread::sleep(Duration::from_millis(200));
+    };
+    let running = || {
+        let output = Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/NH"])
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&output.stdout).contains(&pid.to_string())
+    };
+    assert!(
+        running(),
+        "the server is running before the runner is ended"
+    );
+
+    runner.kill().unwrap();
+    runner.wait().unwrap();
+    let ended = Instant::now();
+    while running() && ended.elapsed() < Duration::from_secs(15) {
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    let left = running();
+    let _ = std::fs::remove_dir_all(&dir);
+    assert!(!left, "the server outlived the runner");
+}
+
 #[cfg(windows)]
 #[test]
 fn on_windows_a_command_that_is_not_there_exits_127() {
