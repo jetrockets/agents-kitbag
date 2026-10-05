@@ -120,8 +120,7 @@ jobs:
   # every dependency, and none of them should run beside the key.
   #
   # The key lives in the release-signing environment, which takes jobs from
-  # v* tags only and waits for a reviewer: the packages are built, and are
-  # published to every installed copy only once someone has approved them.
+  # v* tags only: no other workflow run, branch or pull request can read it.
   publish:
     name: GitHub release
     needs: [version, build, macos]
