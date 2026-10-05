@@ -105,12 +105,22 @@ impl Http for DemoHttp {
 /// storage: the Keychain, the Node runner, the GitHub CLI and plain text
 /// (with a token the service refuses).
 pub fn backend(folder: &Path) -> Backend {
+    let config_path = folder.join("claude_desktop_config.json");
+    // The demo's Claude Desktop is the folder itself, whatever the machine
+    // the demo runs on has installed.
     let env = Env::with(
         Os::Mac,
         folder,
-        &[("USER", "ada"), (op::PATH_OVERRIDE, "/opt/homebrew/bin/op")],
+        &[
+            ("USER", "ada"),
+            (op::PATH_OVERRIDE, "/opt/homebrew/bin/op"),
+            (
+                agents_kitbag_core::config::PATH_OVERRIDE,
+                &config_path.to_string_lossy(),
+            ),
+        ],
     );
-    let config = ConfigFile::new(folder.join("claude_desktop_config.json"), Os::Mac);
+    let config = ConfigFile::new(config_path, Os::Mac);
     let servers = [
         (
             "jira-acme",

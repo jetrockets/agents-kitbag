@@ -90,6 +90,7 @@ impl Assistant {
             Assistant::ClaudeDesktop => {
                 config.parent().is_some_and(Path::is_dir)
                     || (env.os == Os::Mac
+                        && env.var(config::PATH_OVERRIDE).is_none()
                         && [Path::new("/"), env.home.as_path()]
                             .iter()
                             .any(|root| root.join("Applications").join("Claude.app").is_dir()))

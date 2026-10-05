@@ -758,6 +758,10 @@ mod tests {
             shared.lock().unwrap().installed,
             [Assistant::ClaudeDesktop, Assistant::ClaudeCode]
         );
+        // Nothing of the machine the tests run on is looked at.
+        std::fs::remove_file(dir.path().join(".claude.json")).unwrap();
+        worker.handle(Command::Refresh);
+        assert_eq!(shared.lock().unwrap().installed, [Assistant::ClaudeDesktop]);
     }
 
     #[test]
