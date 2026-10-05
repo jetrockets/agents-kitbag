@@ -1,0 +1,21 @@
+{
+  "name": "claude-toolkit",
+  "version": "0.20.1",
+  "type": "module",
+  "description": "One-click MCP setup for Claude Desktop — Jira, Linear, Asana, GitHub",
+  "scripts": {
+    "setup": "node src/index.js",
+    "test": "vitest run && bats src/__tests__/*.bats",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "inquirer": "^12.6.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "bats": "^1.13.0",
+    "vitest": "^4.1.6"
+  }
+}

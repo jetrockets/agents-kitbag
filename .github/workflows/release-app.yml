@@ -1,0 +1,160 @@
+name: Release app
+
+# An app-v* tag builds every package and publishes a GitHub release with
+# checksums. (v* tags are the Node.js toolkit's.) Run it by hand
+# (workflow_dispatch) for a dry run that builds and uploads the artifacts but
+# publishes nothing.
+#
+# Nothing is code-signed yet: macOS gets the ad-hoc signature arm64 needs,
+# Windows none. Gatekeeper and SmartScreen will ask the first time.
+on:
+  push:
+    tags: ["app-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # A tag that disagrees with Cargo.toml would publish mislabelled packages,
+  # so check it before anything is built. The dry run takes the version from
+  # Cargo.toml.
+  version:
+    name: Tag matches Cargo.toml
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag matches the workspace version
+        id: version
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)"
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "${GITHUB_REF_NAME#app-v}" != "$version" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match version ${version} in Cargo.toml; expected tag app-v${version}."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: build (${{ matrix.target }})
+    needs: version
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The oldest image, for the oldest glibc.
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show active-toolchain || rustup toolchain install
+      - name: GUI build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev libxkbcommon-dev libwayland-dev libgl1-mesa-dev
+      # No compiler cache: published binaries never build from restored outputs.
+      - run: cargo build --release --locked -p toolkit-app -p toolkit-runner
+      - name: Archive (Linux)
+        if: runner.os == 'Linux'
+        run: bash packaging/linux/package.sh target/release "$VERSION" dist
+      - name: Archive (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: packaging\windows\package.ps1 -BinDir target\release -Version $env:VERSION -OutDir dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+          if-no-files-found: error
+
+  macos:
+    name: macOS universal app
+    needs: version
+    runs-on: macos-latest
+    timeout-minutes: 90
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show active-toolchain || rustup toolchain install
+      - run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - name: Build both architectures
+        run: |
+          cargo build --release --locked --target aarch64-apple-darwin -p toolkit-app -p toolkit-runner
+          cargo build --release --locked --target x86_64-apple-darwin -p toolkit-app -p toolkit-runner
+      - name: Universal binaries
+        run: |
+          mkdir -p universal
+          for binary in claude-toolkit claude-toolkit-runner; do
+            lipo -create "target/aarch64-apple-darwin/release/$binary" \
+              "target/x86_64-apple-darwin/release/$binary" -output "universal/$binary"
+          done
+      - name: App and DMG
+        run: |
+          mkdir -p dist
+          bash packaging/macos/bundle.sh universal/claude-toolkit universal/claude-toolkit-runner \
+            "dist/Claude Toolkit.app" "$VERSION"
+          bash packaging/macos/dmg.sh "dist/Claude Toolkit.app" "dist/claude-toolkit-v$VERSION-macos-universal.dmg"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-universal
+          path: dist/*.dmg
+          if-no-files-found: error
+
+  publish:
+    name: GitHub release
+    needs: [version, build, macos]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    # The only job that writes: it creates the release.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      # checksums.txt in sha256sum format: fastframe-update installs nothing
+      # whose hash is not in it.
+      - name: Checksums
+        run: (cd dist && sha256sum * > checksums.txt && cat checksums.txt)
+      # packaging/release-notes/<tag>.md when there is one, GitHub's own
+      # notes otherwise.
+      - uses: actions/checkout@v4
+        with:
+          path: source
+          sparse-checkout: packaging/release-notes
+      - name: Release notes
+        id: notes
+        run: |
+          notes="source/packaging/release-notes/${GITHUB_REF_NAME}.md"
+          if [ -f "$notes" ]; then
+            cp "$notes" release-notes.md
+            echo "written=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "written=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          name: Claude Toolkit app ${{ needs.version.outputs.version }}
+          body_path: ${{ steps.notes.outputs.written == 'true' && 'release-notes.md' || '' }}
+          generate_release_notes: ${{ steps.notes.outputs.written != 'true' }}
+          # The repository's latest release stays the terminal menu's until
+          # the app replaces it.
+          make_latest: false
+          # The version, not the tag: app-v0.21.0 always has a hyphen.
+          prerelease: ${{ contains(needs.version.outputs.version, '-') }}

@@ -1,0 +1,111 @@
+name: Packaging
+
+# Builds the macOS app and disk image, the Windows archive and the Linux
+# archive the way the release does, and installs them, whenever packaging
+# changes. No signing here.
+on:
+  pull_request:
+    paths: [packaging/**, Cargo.toml, Cargo.lock, rust-toolchain.toml, crates/toolkit-app/Cargo.toml, crates/toolkit-app/src/main.rs, crates/toolkit-app/src/entrypoint.rs, crates/toolkit-app/src/updates.rs, crates/toolkit-runner/**, .github/workflows/packaging.yml, .github/workflows/release-app.yml]
+  push:
+    branches: [main]
+    paths: [packaging/**, Cargo.toml, Cargo.lock, rust-toolchain.toml, crates/toolkit-app/Cargo.toml, crates/toolkit-app/src/main.rs, crates/toolkit-app/src/entrypoint.rs, crates/toolkit-app/src/updates.rs, crates/toolkit-runner/**, .github/workflows/packaging.yml, .github/workflows/release-app.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: packaging-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  macos:
+    name: macOS app and DMG
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show active-toolchain || rustup toolchain install
+      - run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - name: Build both architectures
+        run: |
+          cargo build --release --locked --target aarch64-apple-darwin -p toolkit-app -p toolkit-runner
+          cargo build --release --locked --target x86_64-apple-darwin -p toolkit-app -p toolkit-runner
+      - name: Universal binaries
+        run: |
+          mkdir -p universal
+          for binary in claude-toolkit claude-toolkit-runner; do
+            lipo -create "target/aarch64-apple-darwin/release/$binary" \
+              "target/x86_64-apple-darwin/release/$binary" -output "universal/$binary"
+            lipo -archs "universal/$binary"
+          done
+      - name: App and DMG (ad-hoc signed)
+        run: |
+          mkdir -p dist
+          bash packaging/macos/bundle.sh universal/claude-toolkit universal/claude-toolkit-runner \
+            "dist/Claude Toolkit.app" 0.0.0-dev
+          bash packaging/macos/dmg.sh "dist/Claude Toolkit.app" dist/claude-toolkit-dev-macos-universal.dmg
+      - name: The DMG opens and the app runs
+        run: |
+          hdiutil attach -nobrowse -mountpoint /tmp/claude-toolkit-dmg dist/claude-toolkit-dev-macos-universal.dmg
+          app="/tmp/claude-toolkit-dmg/Claude Toolkit.app"
+          test -L /tmp/claude-toolkit-dmg/Applications
+          "$app/Contents/MacOS/claude-toolkit" --version
+          "$app/Contents/MacOS/claude-toolkit-runner" --version
+          test -f "$app/Contents/Resources/claude-toolkit.icns"
+          codesign --verify --strict "$app"
+          hdiutil detach /tmp/claude-toolkit-dmg
+
+  windows:
+    name: Windows archive
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show active-toolchain || rustup toolchain install
+      - run: cargo build --release --locked -p toolkit-app -p toolkit-runner
+      - name: Archive
+        shell: pwsh
+        run: packaging\windows\package.ps1 -BinDir target\release -Version 0.0.0-dev -OutDir dist
+      - name: Unpack and run
+        shell: pwsh
+        run: |
+          Expand-Archive (Get-ChildItem dist\*.zip).FullName -DestinationPath "$env:RUNNER_TEMP\Claude Toolkit"
+          $app = (Get-ChildItem "$env:RUNNER_TEMP\Claude Toolkit" -Directory | Select-Object -First 1).FullName
+          # The marker that lets a copy update itself.
+          if ((Get-Content "$app\claude-toolkit-portable.txt" -Raw) -ne 'claude-toolkit-portable-v1') { throw 'marker' }
+          & "$app\claude-toolkit-runner.exe" --version
+          if ($LASTEXITCODE -ne 0) { throw "the runner exited $LASTEXITCODE" }
+          # A GUI program: check the exit code, there is no console output.
+          $run = Start-Process "$app\claude-toolkit.exe" -ArgumentList '--version' -Wait -PassThru
+          if ($run.ExitCode -ne 0) { throw "claude-toolkit --version exited $($run.ExitCode)" }
+
+  linux:
+    name: Linux archive
+    # The oldest runner image, so the programs start on distributions with an
+    # older glibc than the newest Ubuntu's.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show active-toolchain || rustup toolchain install
+      - name: GUI build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev libxkbcommon-dev libwayland-dev libgl1-mesa-dev
+      - run: cargo build --release --locked -p toolkit-app -p toolkit-runner
+      - name: Archive
+        run: bash packaging/linux/package.sh target/release 0.0.0-dev dist
+      - name: Unpack, install and run
+        run: |
+          tar -xzf dist/*.tar.gz -C "$RUNNER_TEMP"
+          XDG_DATA_HOME="$RUNNER_TEMP/data" sh "$RUNNER_TEMP"/claude-toolkit-v*/install.sh
+          installed="$RUNNER_TEMP/data/claude-toolkit"
+          "$installed/claude-toolkit" --version
+          "$installed/claude-toolkit-runner" --version
+          test "$(cat "$installed/claude-toolkit-portable.txt")" = "claude-toolkit-portable-v1"
+          grep -q "Exec=\"$installed/claude-toolkit\"" "$RUNNER_TEMP/data/applications/claude-toolkit.desktop"
+          test -s "$RUNNER_TEMP/data/icons/hicolor/512x512/apps/claude-toolkit.png"

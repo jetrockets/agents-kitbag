@@ -1,0 +1,20 @@
+[package]
+name = "toolkit-runner"
+description = "Starts an MCP server with its secrets fetched from the OS credential store"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "claude-toolkit-runner"
+path = "src/main.rs"
+
+[dependencies]
+# The credential stores and the argument format. No HTTP client: the runner
+# makes no requests and must start at once.
+toolkit-core.workspace = true

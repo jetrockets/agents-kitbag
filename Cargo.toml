@@ -1,0 +1,55 @@
+[workspace]
+resolver = "3"
+members = ["crates/toolkit-core", "crates/toolkit-app", "crates/toolkit-runner"]
+
+[workspace.package]
+version = "0.22.1"
+edition = "2024"
+rust-version = "1.98"
+license = "MIT"
+publish = false
+
+[workspace.lints.rust]
+# The one exception (replacing the runner with the server on Unix) carries a
+# local allow and a reason.
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+unwrap_used = "warn"
+
+[workspace.dependencies]
+# Without features here: the runner leaves the HTTP client out.
+toolkit-core = { path = "crates/toolkit-core", default-features = false }
+serde = { version = "1", features = ["derive"] }
+# preserve_order: a config rewritten by the toolkit keeps the key order the
+# person (or Claude Desktop) gave it.
+serde_json = { version = "1", features = ["preserve_order"] }
+log = "0.4"
+tempfile = "3"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "abort"
+
+# Immediate-mode layout is slow at opt-level 0; dependencies are optimized,
+# the app itself stays incremental.
+[profile.dev.package."*"]
+opt-level = 2
+
+[patch.crates-io]
+# crmne/egui apps-0.36 and crmne/winit apps-0.30, the revisions the other
+# fastframe apps build against. Every egui crate from one revision;
+# egui and winit move together.
+ecolor = { git = "https://github.com/crmne/egui", rev = "0b431145c22ee27b20b0aff7243d74f4b32e9a79" }
+eframe = { git = "https://github.com/crmne/egui", rev = "0b431145c22ee27b20b0aff7243d74f4b32e9a79" }
+egui = { git = "https://github.com/crmne/egui", rev = "0b431145c22ee27b20b0aff7243d74f4b32e9a79" }
+egui-winit = { git = "https://github.com/crmne/egui", rev = "0b431145c22ee27b20b0aff7243d74f4b32e9a79" }
+egui_extras = { git = "https://github.com/crmne/egui", rev = "0b431145c22ee27b20b0aff7243d74f4b32e9a79" }
+egui_glow = { git = "https://github.com/crmne/egui", rev = "0b431145c22ee27b20b0aff7243d74f4b32e9a79" }
+egui_kittest = { git = "https://github.com/crmne/egui", rev = "0b431145c22ee27b20b0aff7243d74f4b32e9a79" }
+emath = { git = "https://github.com/crmne/egui", rev = "0b431145c22ee27b20b0aff7243d74f4b32e9a79" }
+epaint = { git = "https://github.com/crmne/egui", rev = "0b431145c22ee27b20b0aff7243d74f4b32e9a79" }
+epaint_default_fonts = { git = "https://github.com/crmne/egui", rev = "0b431145c22ee27b20b0aff7243d74f4b32e9a79" }
+winit = { git = "https://github.com/crmne/winit", rev = "fc4f39ff0993dd235952b749dd16b856c0194e1f" }
