@@ -54,8 +54,8 @@ assistant has servers, tokens and backups of its own.
 Everything else in those files is left as it was, comments in the TOML
 included. `CLAUDE_CONFIG_DIR` and `CODEX_HOME` are followed when the app's own
 environment has them. Checked on macOS with the real `claude` and `codex`
-reading files the app wrote; on Windows and Linux this is covered by tests
-only.
+starting a server the app wrote, its token coming from the Keychain; on
+Windows and Linux this is covered by tests only.
 
 ## Integrations
 
