@@ -1,11 +1,12 @@
-//! The list of integrations, each with a mark for the state of its tokens.
+//! The MCP servers section's list: the assistant they belong to, and each
+//! integration with a mark for the state of its tokens.
 
 use agents_kitbag_core::health::Status;
 use agents_kitbag_core::integrations;
 use eframe::egui::{self, Align2, Color32, Id, Response, Sense, Stroke, Ui, vec2};
 
 use super::kit::{self, Kind};
-use super::{Screen, State};
+use super::{Screen, Section, State};
 use crate::snapshot::{HealthView, IntegrationView, Snapshot};
 use crate::theme::{Icon, palette};
 use crate::worker::Command;
@@ -117,10 +118,10 @@ pub fn show(ui: &mut Ui, snapshot: &Snapshot, state: &mut State, out: &mut Vec<C
     ui.horizontal(|ui| {
         ui.add_space(8.0);
         ui.vertical(|ui| {
-            kit::text(ui, "Agents Kitbag", kit::semibold(kit::BASE), p.text);
+            kit::text(ui, "Claude Desktop", kit::semibold(kit::BASE), p.text);
             kit::text(
                 ui,
-                "MCP servers for Claude Desktop",
+                Section::Servers.name(),
                 kit::regular(kit::XS),
                 p.text_tertiary,
             );
@@ -132,7 +133,8 @@ pub fn show(ui: &mut Ui, snapshot: &Snapshot, state: &mut State, out: &mut Vec<C
         let view = snapshot.integration(integration.key);
         let mark = view.map_or(Mark::NotConfigured, mark);
         let count = view.map_or(0, |v| v.instances.len());
-        let selected = state.screen == Screen::Integration && state.selected == integration.key;
+        let selected =
+            state.screen == Screen::Section(Section::Servers) && state.selected == integration.key;
         let (rect, response) = row(
             ui,
             Id::new(("integration", integration.key)),
@@ -174,7 +176,7 @@ pub fn show(ui: &mut Ui, snapshot: &Snapshot, state: &mut State, out: &mut Vec<C
     }
 
     // The actions sit at the bottom of the window.
-    let actions = 2.0 * (ROW + 2.0) + state.update.as_ref().map_or(0.0, |_| 84.0) + 12.0;
+    let actions = ROW + 2.0 + state.update.as_ref().map_or(0.0, |_| 84.0) + 12.0;
     let gap = (ui.available_height() - actions).max(12.0);
     ui.add_space(gap);
 
@@ -218,17 +220,5 @@ pub fn show(ui: &mut Ui, snapshot: &Snapshot, state: &mut State, out: &mut Vec<C
     );
     if response.clicked() && any_configured {
         out.push(Command::CheckAll);
-    }
-
-    let selected = state.screen == Screen::Settings;
-    let (rect, response) = row(ui, Id::new("settings"), "Settings", "Settings", selected);
-    ui.put(
-        egui::Rect::from_center_size(rect.left_center() + vec2(15.0, 0.0), vec2(14.0, 14.0)),
-        Icon::Settings.image(p.text_tertiary, 14.0),
-    );
-    if response.clicked() {
-        state.screen = Screen::Settings;
-        state.form = None;
-        state.confirm = None;
     }
 }

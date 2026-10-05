@@ -1,5 +1,9 @@
-//! The window: a sidebar of integrations and, beside it, the selected one's
-//! servers, the form that sets one up, or the settings.
+//! The window, in three columns: a rail with one icon for each section, the
+//! selected section's list, and what is selected in it. The settings take the
+//! place of the last two.
+//!
+//! A new section is a variant of [`Section`], a line in [`Section::ALL`], and
+//! an arm for its list and its detail in [`show`].
 //!
 //! Views draw a [`Snapshot`] and return [`Command`]s. They never wait.
 
@@ -10,13 +14,14 @@ use agents_kitbag_core::storage::StoreChoice;
 use eframe::egui::{self, Margin, Stroke, Ui, UiBuilder, vec2};
 
 use crate::snapshot::Snapshot;
-use crate::theme::palette;
+use crate::theme::{Icon, palette};
 use crate::updates::{Checked, Offer};
 use crate::worker::Command;
 
 mod detail;
 mod form;
 pub mod kit;
+mod rail;
 mod settings;
 mod sidebar;
 #[cfg(test)]
@@ -24,13 +29,39 @@ mod tests;
 
 use kit::{Banner, Kind};
 
+const RAIL: f32 = 56.0;
 const SIDEBAR: f32 = 232.0;
 /// Text is easier to read in a column than across a wide window.
 const COLUMN: f32 = 660.0;
 
+/// A part of what the app looks after for an assistant.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Section {
+    /// The MCP servers in the assistant's config.
+    Servers,
+}
+
+impl Section {
+    /// The sections in the rail, top to bottom.
+    pub const ALL: &[Section] = &[Section::Servers];
+
+    /// What the section is called in its list's heading, and to a screen reader.
+    pub fn name(self) -> &'static str {
+        match self {
+            Section::Servers => "MCP servers",
+        }
+    }
+
+    pub fn icon(self) -> Icon {
+        match self {
+            Section::Servers => Icon::Plug,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Screen {
-    Integration,
+    Section(Section),
     Settings,
 }
 
@@ -106,7 +137,7 @@ impl Default for State {
     fn default() -> Self {
         Self {
             selected: integrations::ALL[0].key,
-            screen: Screen::Integration,
+            screen: Screen::Section(Section::Servers),
             form: None,
             confirm: None,
             next_save: 1,
@@ -139,7 +170,12 @@ impl State {
 
     fn select(&mut self, key: &'static str) {
         self.selected = key;
-        self.screen = Screen::Integration;
+        self.open(Screen::Section(Section::Servers));
+    }
+
+    /// Goes to a screen, leaving behind a form or a question on the old one.
+    fn open(&mut self, screen: Screen) {
+        self.screen = screen;
         self.form = None;
         self.confirm = None;
     }
@@ -169,18 +205,31 @@ pub fn show(ui: &mut Ui, snapshot: &Snapshot, state: &mut State) -> Vec<Command>
 
     let p = palette(ui.ctx());
     let full = ui.max_rect();
-    let (side, main) = full.split_left_right_at_x(full.left() + SIDEBAR.min(full.width() * 0.4));
-    ui.painter().rect_filled(side, 0, p.sidebar_bg);
-    ui.painter().rect_filled(main, 0, p.bg);
+    let (rail, rest) = full.split_left_right_at_x(full.left() + RAIL);
+    ui.painter().rect_filled(rail, 0, p.sidebar_bg);
     ui.painter()
-        .vline(side.right(), side.y_range(), Stroke::new(1.0, p.border));
-
+        .vline(rail.right(), rail.y_range(), Stroke::new(1.0, p.border));
     ui.scope_builder(
-        UiBuilder::new().max_rect(side.shrink2(vec2(10.0, 14.0))),
-        |ui| {
-            sidebar::show(ui, snapshot, state, &mut out);
-        },
+        UiBuilder::new().max_rect(rail.shrink2(vec2(0.0, 14.0))),
+        |ui| rail::show(ui, state),
     );
+
+    let main = match state.screen {
+        Screen::Section(Section::Servers) => {
+            let (side, main) =
+                rest.split_left_right_at_x(rest.left() + SIDEBAR.min(rest.width() * 0.4));
+            ui.painter().rect_filled(side, 0, p.sidebar_bg);
+            ui.painter()
+                .vline(side.right(), side.y_range(), Stroke::new(1.0, p.border));
+            ui.scope_builder(
+                UiBuilder::new().max_rect(side.shrink2(vec2(10.0, 14.0))),
+                |ui| sidebar::show(ui, snapshot, state, &mut out),
+            );
+            main
+        }
+        Screen::Settings => rest,
+    };
+    ui.painter().rect_filled(main, 0, p.bg);
 
     let footer_height = footer_height(snapshot);
     let (content, footer) = main.split_top_bottom_at_y(main.bottom() - footer_height);
@@ -197,10 +246,10 @@ pub fn show(ui: &mut Ui, snapshot: &Snapshot, state: &mut State) -> Vec<Command>
                         banners(ui, snapshot, &mut out);
                         match (state.screen, state.form.is_some()) {
                             (Screen::Settings, _) => settings::show(ui, snapshot, state, &mut out),
-                            (Screen::Integration, true) => {
+                            (Screen::Section(Section::Servers), true) => {
                                 form::show(ui, snapshot, state, &mut out)
                             }
-                            (Screen::Integration, false) => {
+                            (Screen::Section(Section::Servers), false) => {
                                 detail::show(ui, snapshot, state, &mut out)
                             }
                         }

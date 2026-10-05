@@ -23,6 +23,9 @@ their tokens, and offers to move servers off `node .../secret-runner.js`.
 - `agents-kitbag-app`: `ui/` draws a `Snapshot` and returns `Command`s; it never
   waits. `worker.rs` runs every command on one thread and publishes the next
   snapshot. Do not call `agents-kitbag-core` from a view.
+- The window is three columns: a rail of sections, the selected section's
+  list, and its detail. A new section is a variant of `ui::Section`, a line
+  in `Section::ALL`, and an arm for its list and detail in `ui::show`.
 - Tokens travel as `Secret`, which never prints, and reach external commands
   through stdin, never through arguments. Never log a token.
 - A store that refuses a token is an error shown in the form. Nothing falls

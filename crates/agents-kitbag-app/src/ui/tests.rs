@@ -10,11 +10,12 @@ use agents_kitbag_core::gh;
 use agents_kitbag_core::platform::Os;
 use agents_kitbag_core::setup::Done;
 use agents_kitbag_core::storage::StoreChoice;
+use eframe::egui::accesskit::Role;
 use eframe::egui::{self, Event, Id, Modifiers, PointerButton, vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
 
-use super::{Screen, State, form};
+use super::{Screen, Section, State, form};
 use crate::snapshot::{SaveOutcome, Snapshot};
 use crate::worker::{Command, Worker};
 use crate::{demo, theme};
@@ -125,6 +126,32 @@ fn the_sidebar_says_how_each_integration_is_doing() {
     ] {
         assert!(has(&h, label), "{label}");
     }
+}
+
+#[test]
+fn the_rail_goes_between_the_sections_and_the_settings() {
+    let mut h = rig(demo_snapshot());
+    assert!(has(&h, "Claude Desktop"));
+    click(&mut h, "Settings");
+    assert_eq!(h.state().ui.screen, Screen::Settings);
+    // The settings take the place of the section's list.
+    assert!(!has(&h, "Jira, working"));
+    assert!(!has(&h, "Check all tokens"));
+
+    h.get_by_role_and_label(Role::Button, "MCP servers").click();
+    step(&mut h);
+    assert_eq!(h.state().ui.screen, Screen::Section(Section::Servers));
+    assert!(has(&h, "Jira, working"));
+}
+
+#[test]
+fn leaving_for_the_settings_closes_an_open_form() {
+    let mut h = rig(demo_snapshot());
+    click(&mut h, "Notion, not configured");
+    click(&mut h, "Add workspace");
+    assert!(h.state().ui.form.is_some());
+    click(&mut h, "Settings");
+    assert!(h.state().ui.form.is_none());
 }
 
 #[test]

@@ -122,6 +122,7 @@ fastframe_icons::icons! {
         Info => lucide "info",
         Lock => lucide "lock",
         Pencil => lucide "pencil",
+        Plug => "plug",
         Plus => lucide "plus",
         Refresh => lucide "refresh-cw",
         Settings => lucide "settings",
