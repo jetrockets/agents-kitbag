@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- The app icon: a kitbag. packaging/icon.sh draws the PNGs from it. -->
+  <rect x="92" y="92" width="840" height="840" rx="188" fill="#b35434"/>
+  <g fill="none" stroke="#faf8f4" stroke-width="44" stroke-linecap="round" stroke-linejoin="round">
+    <!-- the handles, and the straps they become -->
+    <path d="M396 772V400C396 250 628 250 628 400V772"/>
+    <!-- the bag -->
+    <rect x="212" y="424" width="600" height="348" rx="96"/>
+  </g>
+  <!-- the clasp -->
+  <circle cx="512" cy="598" r="40" fill="#faf8f4"/>
+</svg>
