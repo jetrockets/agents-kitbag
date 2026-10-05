@@ -1,21 +1,18 @@
 # claude-toolkit agent guide
 
-MCP setup for Claude Desktop. Two implementations live side by side until the
-Rust one has been verified on Windows:
+MCP setup for Claude Desktop: a native app on egui/eframe and fastframe, for
+macOS, Windows and Linux. It replaced a Node.js terminal menu, and configs
+that menu wrote are still on people's machines: the app reads them, checks
+their tokens, and offers to move servers off `node .../secret-runner.js`.
 
-- `src/` is the Node.js terminal menu (`npm test`). It is the reference for
-  every behaviour and message.
-- `crates/` is the native app on egui/eframe and fastframe, for macOS,
-  Windows and Linux.
-
-## Rust architecture
+## Architecture
 
 - `toolkit-core` has no window. The config, the credential stores,
   1Password, the integrations and the health checks are plain functions over
   two traits: `exec::CommandRunner` (every external command) and `http::Http`
   (every request). Tests answer for both; nothing in a test touches the real
-  Keychain, network or config. The one exception is the runner's own
-  `tests/cli.rs`, which reads one real Keychain entry it creates and removes.
+  credential store, network or config, except the few `#[ignore]`d ones named
+  under Checks.
 - An integration is a value (`integrations::Integration`): its fields, how
   its token is validated, the server config it becomes, how that token is
   checked later. A new one is one file and one line in `integrations::ALL`.

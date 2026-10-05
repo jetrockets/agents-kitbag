@@ -17,7 +17,8 @@ use crate::store::{SecretRef, Stores};
 
 /// The Rust runner's file name, without `.exe`.
 pub const NAME: &str = "claude-toolkit-runner";
-/// The JS toolkit's runner, started as `node .../secret-runner.js`.
+/// The runner of the Node.js toolkit this app replaced, started as
+/// `node .../secret-runner.js`. Configs it wrote are still out there.
 pub const LEGACY_SCRIPT: &str = "secret-runner.js";
 
 #[derive(Clone, Debug, PartialEq)]
@@ -100,7 +101,7 @@ fn reason(stores: &Stores, reference: &SecretRef) -> String {
 /// Which runner, if any, launches this server.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
-    /// `node .../secret-runner.js`, written by the JS toolkit.
+    /// `node .../secret-runner.js`, written by the Node.js toolkit.
     Legacy,
     /// `claude-toolkit-runner`.
     Native,

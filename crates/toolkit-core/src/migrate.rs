@@ -1,4 +1,4 @@
-//! Servers the JS toolkit set up are launched through
+//! Servers set up by the Node.js toolkit this app replaced are launched through
 //! `node .../secret-runner.js`. Moving them onto the Rust runner takes Node
 //! and the toolkit's own folder out of every launch.
 

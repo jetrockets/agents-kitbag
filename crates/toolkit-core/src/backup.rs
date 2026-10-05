@@ -146,7 +146,7 @@ mod tests {
         let config = dir.path().join("claude_desktop_config.json");
         let backups = dir.path().join("backups");
         std::fs::create_dir_all(&backups).unwrap();
-        // Five old backups in the JS toolkit's naming, and a stranger's file.
+        // Five old backups in the Node.js toolkit's naming, and a stranger's file.
         for n in 1..=5 {
             std::fs::write(
                 backups.join(format!("{PREFIX}2026010100000{n}..json")),

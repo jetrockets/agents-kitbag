@@ -338,7 +338,7 @@ impl Stores<'_> {
     pub fn usable(&self, backend: Backend) -> bool {
         match backend {
             // Whether there is a login keychain to write to. Not
-            // `security error 0`, the JS toolkit's probe: on macOS 15 it
+            // `security error 0`, the probe the Node.js toolkit used: on macOS 15 it
             // prints "No error." and exits 1, so the Keychain was never
             // offered.
             Backend::Keychain => self

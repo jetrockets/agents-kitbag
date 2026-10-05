@@ -18,26 +18,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # The Node.js terminal menu (src/), until the app replaces it.
-  js:
-    name: js (${{ matrix.os }}, node ${{ matrix.node-version }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-2022, windows-latest]
-        node-version: [20, 22]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node-version }}
-          cache: npm
-      - run: npm ci
-      - run: npm test
-
-  # The app (crates/). Formatting, lints and docs once, on one system.
+  # Formatting, lints and docs once, on one system.
   quality:
     runs-on: ubuntu-latest
     timeout-minutes: 30

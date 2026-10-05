@@ -107,7 +107,7 @@ impl eframe::App for Window {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
         }
-        // Claude Desktop, an editor or the JS toolkit may have changed the
+        // Claude Desktop or an editor may have changed the
         // config while the window was in the background.
         let focused = ctx.input(|i| i.viewport().focused).unwrap_or(true);
         if focused && !std::mem::replace(&mut self.was_focused, focused) {
