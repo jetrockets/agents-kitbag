@@ -73,6 +73,16 @@ server as Claude Desktop would and waits for its answer to the MCP
 `initialize`. It downloads an npm package, and on Windows installs it
 globally.
 
+And one for when an assistant's config or the runner changes:
+
+    cargo build -p agents-kitbag-runner
+    cargo test -p agents-kitbag-core --features net --test real_assistants -- --ignored --nocapture
+
+writes a server into a config for Claude Code and for Codex as the app does,
+its token in the credential store, and has the real `claude` and `codex`
+start it, each in a folder of its own. The Codex half needs Codex signed in
+and makes one short request to its model. macOS and Linux only.
+
 `packaging.yml` builds the three packages the way the release does and
 installs them, when packaging changes.
 
