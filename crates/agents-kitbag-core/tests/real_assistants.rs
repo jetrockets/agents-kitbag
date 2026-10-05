@@ -16,6 +16,10 @@
 //! credential store entry is removed at the end.
 
 #![cfg(unix)]
+#![allow(
+    clippy::unwrap_used,
+    reason = "a test: its helpers fail the way its test functions do"
+)]
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
