@@ -162,7 +162,7 @@ pub fn options() -> eframe::NativeOptions {
     eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("Agents Kitbag")
-            .with_inner_size([960.0, 660.0])
+            .with_inner_size([960.0, 760.0])
             .with_min_inner_size([760.0, 520.0])
             // An empty icon keeps the bundle's: without one eframe sets its
             // own egui logo as the application icon.

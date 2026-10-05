@@ -1,5 +1,6 @@
 //! Setting an integration up: its fields, where the token is kept, Save.
 
+use agents_kitbag_core::assistant::Assistant;
 use agents_kitbag_core::gh;
 use agents_kitbag_core::integrations::{self, FieldKind, Integration, TOKEN, TokenSource};
 use agents_kitbag_core::storage::{Available, StoreChoice};
@@ -145,6 +146,10 @@ pub fn show(ui: &mut Ui, snapshot: &Snapshot, state: &mut State, out: &mut Vec<C
         }
     }
 
+    if ready {
+        assistants(ui, form, snapshot, !waiting);
+    }
+
     if let Some(error) = &form.error {
         kit::banner(ui, Banner::Bad, error, None);
     }
@@ -178,12 +183,55 @@ pub fn show(ui: &mut Ui, snapshot: &Snapshot, state: &mut State, out: &mut Vec<C
                 instance: integration.is_multi().then(|| form.instance.clone()),
                 values: form.values.clone(),
                 store,
+                also: form.also.clone(),
             });
         }
         if kit::button(ui, "Cancel", Kind::Secondary, !waiting).clicked() {
             state.form = None;
         }
     });
+}
+
+/// "Set up for": the assistant in view, and any other on this machine that
+/// should get the same server in the same Save.
+fn assistants(ui: &mut Ui, form: &mut Form, snapshot: &Snapshot, enabled: bool) {
+    let others: Vec<Assistant> = snapshot
+        .installed
+        .iter()
+        .copied()
+        .filter(|assistant| *assistant != snapshot.assistant)
+        .collect();
+    if others.is_empty() {
+        return;
+    }
+    ui.add_space(4.0);
+    kit::field_label(ui, "Set up for");
+    ui.add_enabled_ui(enabled, |ui| {
+        // One row: the form is long enough already.
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing.x = 18.0;
+            let mut always = true;
+            ui.add_enabled(
+                false,
+                egui::Checkbox::new(&mut always, snapshot.assistant.name()),
+            );
+            for other in others {
+                let mut on = form.also.contains(&other);
+                if ui.checkbox(&mut on, other.name()).changed() {
+                    form.also.retain(|a| *a != other);
+                    if on {
+                        form.also.push(other);
+                    }
+                }
+            }
+        });
+    });
+    if !form.also.is_empty() {
+        kit::hint(
+            ui,
+            "Each assistant gets its own copy of the token, so one can be removed without the others.",
+        );
+    }
 }
 
 fn is_gh_source(integration: &Integration) -> bool {

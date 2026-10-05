@@ -7,7 +7,7 @@
 //!
 //! Views draw a [`Snapshot`] and return [`Command`]s. They never wait.
 
-use agents_kitbag_core::assistant::Loads;
+use agents_kitbag_core::assistant::{Assistant, Loads};
 use agents_kitbag_core::claude;
 use agents_kitbag_core::integrations::{self, Integration, Values};
 use agents_kitbag_core::platform::Os;
@@ -84,6 +84,8 @@ pub struct Form {
     pub values: Values,
     /// `None` until the person picks one: the best available is used.
     pub store: Option<StoreChoice>,
+    /// The other assistants to set the same server up for.
+    pub also: Vec<Assistant>,
     pub show_token: bool,
     /// Whether this form has asked the worker which stores work here.
     pub asked_stores: bool,
@@ -100,6 +102,7 @@ impl Form {
             instance: String::new(),
             values: Values::new(),
             store: None,
+            also: Vec::new(),
             show_token: false,
             asked_stores: false,
             waiting: None,

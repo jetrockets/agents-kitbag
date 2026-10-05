@@ -127,11 +127,20 @@ fn assistants(ui: &mut Ui, snapshot: &Snapshot, state: &mut State, out: &mut Vec
             )
             .show_ui(ui, |ui| {
                 for assistant in Assistant::ALL {
-                    ui.selectable_value(
-                        &mut chosen,
-                        *assistant,
-                        egui::RichText::new(assistant.name()).font(kit::regular(kit::SM)),
-                    );
+                    // One that is not on this machine has nothing to set up.
+                    let installed = snapshot.installed.contains(assistant);
+                    let name = if installed {
+                        assistant.name().to_owned()
+                    } else {
+                        format!("{} (not installed)", assistant.name())
+                    };
+                    ui.add_enabled_ui(installed || *assistant == snapshot.assistant, |ui| {
+                        ui.selectable_value(
+                            &mut chosen,
+                            *assistant,
+                            egui::RichText::new(name).font(kit::regular(kit::SM)),
+                        );
+                    });
                 }
             })
             .response

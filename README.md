@@ -51,6 +51,12 @@ assistant has servers, tokens and backups of its own.
 | Claude Code | `mcpServers` in `~/.claude.json` (every project) | in a new session |
 | Codex | `[mcp_servers]` in `~/.codex/config.toml` | in a new session |
 
+An assistant that has never been used on this machine (it has left no
+settings folder) is listed as not installed and cannot be chosen. The setup
+form can set the same server up for the other installed assistants in the
+same Save; each gets its own copy of the token, so one can be removed without
+the others.
+
 Everything else in those files is left as it was, comments in the TOML
 included. `CLAUDE_CONFIG_DIR` and `CODEX_HOME` are followed when the app's own
 environment has them. Checked on macOS with the real `claude` and `codex`

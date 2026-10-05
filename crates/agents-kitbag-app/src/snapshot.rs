@@ -67,6 +67,8 @@ pub struct Snapshot {
     pub os: Os,
     /// The assistant everything below is about.
     pub assistant: Assistant,
+    /// The assistants found on this machine.
+    pub installed: Vec<Assistant>,
     pub config_path: String,
     /// The config exists but cannot be used: nothing is written until it is fixed.
     pub config_error: Option<String>,
@@ -96,6 +98,7 @@ impl Snapshot {
         Self {
             os,
             assistant: Assistant::ClaudeDesktop,
+            installed: Vec::new(),
             config_path: String::new(),
             config_error: None,
             integrations: Vec::new(),
