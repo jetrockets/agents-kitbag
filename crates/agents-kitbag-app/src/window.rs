@@ -1,6 +1,7 @@
 //! The eframe app: it hands the worker's snapshot to the views and their
 //! commands back to the worker.
 
+use agents_kitbag_core::assistant::Assistant;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -28,6 +29,8 @@ pub enum Mode {
 /// What `--demo-shot` opens before it takes the picture.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Opening {
+    /// The assistant to look at; Claude Desktop when there is none.
+    pub assistant: Option<Assistant>,
     /// The integration to select.
     pub select: Option<&'static str>,
     pub form: bool,
@@ -47,6 +50,9 @@ pub struct Window {
 impl Window {
     pub fn new(worker: Handle, updates: Updates, mode: Mode, opening: &Opening) -> Self {
         let mut state = ui::State::default();
+        if let Some(assistant) = opening.assistant {
+            worker.send(Command::UseAssistant(assistant));
+        }
         if let Some(key) = opening.select {
             state.selected = key;
         }

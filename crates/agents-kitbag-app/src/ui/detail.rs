@@ -75,22 +75,29 @@ pub fn show(ui: &mut Ui, snapshot: &Snapshot, state: &mut State, out: &mut Vec<C
     }
 
     if instances.is_empty() {
-        empty(ui, integration, state);
+        empty(ui, integration, snapshot.assistant.name(), state);
         return;
     }
     for instance in instances {
-        card(ui, integration, instance, state, out);
+        card(
+            ui,
+            integration,
+            instance,
+            snapshot.assistant.name(),
+            state,
+            out,
+        );
     }
 }
 
 /// Nothing configured: what setting it up involves, and the button.
-fn empty(ui: &mut Ui, integration: &Integration, state: &mut State) {
+fn empty(ui: &mut Ui, integration: &Integration, assistant: &str, state: &mut State) {
     let p = palette(ui.ctx());
     kit::card(ui, |ui| {
         ui.spacing_mut().item_spacing.y = 8.0;
         kit::text(
             ui,
-            &format!("Connect {} to Claude Desktop", integration.name),
+            &format!("Connect {} to {}", integration.name, assistant),
             kit::medium(kit::BASE),
             p.text,
         );
@@ -138,6 +145,7 @@ fn card(
     ui: &mut Ui,
     integration: &Integration,
     instance: &InstanceView,
+    assistant: &str,
     state: &mut State,
     out: &mut Vec<Command>,
 ) {
@@ -189,8 +197,8 @@ fn card(
             kit::text(
                 ui,
                 &format!(
-                    "Remove {} from Claude Desktop? A token kept in a credential store stays there.",
-                    instance.key
+                    "Remove {} from {}? A token kept in a credential store stays there.",
+                    instance.key, assistant
                 ),
                 kit::regular(kit::SM),
                 p.text_secondary,

@@ -24,6 +24,9 @@ log.workspace = true
 # rustls keeps ring's C and assembly out of the runner.
 ureq = { version = "2.12", default-features = false, features = ["native-tls", "gzip"], optional = true }
 native-tls = { version = "0.2", optional = true }
+# Codex keeps its servers in a TOML file with the person's comments and
+# everything else it is set up with: edited in place, never re-serialized.
+toml_edit = "0.25"
 # Jira's Basic authorization header.
 base64 = "0.22"
 # The private folder a 1Password item template sits in for a moment.

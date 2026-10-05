@@ -4,6 +4,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use agents_kitbag_core::assistant::Assistant;
 use agents_kitbag_core::integrations;
 use clap::Parser;
 use eframe::egui;
@@ -21,7 +22,7 @@ use crate::{demo, theme};
 #[command(
     name = "agents-kitbag",
     version,
-    about = "MCP setup for Claude Desktop"
+    about = "What your AI assistants are equipped with, set up from one window"
 )]
 pub struct Cli {
     /// Log at debug level.
@@ -36,6 +37,10 @@ pub struct Cli {
     /// With --demo-shot: draw it in the light theme.
     #[arg(long, requires = "demo_shot")]
     pub light: bool,
+    /// With --demo or --demo-shot: the assistant to look at (claude-desktop,
+    /// claude-code, codex).
+    #[arg(long, value_name = "KEY")]
+    pub assistant: Option<String>,
     /// With --demo or --demo-shot: the integration to select (jira, github, ...).
     #[arg(long, value_name = "KEY")]
     pub select: Option<String>,
@@ -68,7 +73,15 @@ impl Cli {
                     .ok_or_else(|| format!("no integration is called \"{key}\""))?,
             ),
         };
+        let assistant = match &self.assistant {
+            None => None,
+            Some(key) => Some(
+                Assistant::by_key(key)
+                    .ok_or_else(|| format!("no assistant is called \"{key}\""))?,
+            ),
+        };
         Ok(Opening {
+            assistant,
             select,
             form: self.form,
             settings: self.settings,
@@ -303,6 +316,7 @@ mod tests {
         assert_eq!(
             opening,
             Opening {
+                assistant: None,
                 select: Some("github"),
                 form: true,
                 settings: false

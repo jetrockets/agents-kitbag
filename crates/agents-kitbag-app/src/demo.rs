@@ -4,6 +4,7 @@
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use agents_kitbag_core::assistant::Assistant;
 use agents_kitbag_core::config::{ConfigFile, ServerConfig};
 use agents_kitbag_core::exec::{CommandRunner, Output};
 use agents_kitbag_core::http::{Http, Request, Response};
@@ -189,11 +190,53 @@ pub fn backend(folder: &Path) -> Backend {
     {
         log::warn!("could not write the demo config: {error}");
     }
+    // The other assistants start with one server each, under their own
+    // names for its token.
+    let code = Assistant::ClaudeCode.config(&env);
+    let codex = Assistant::Codex.config(&env);
+    for (config, key, reference) in [
+        (
+            &code,
+            "notion-acme",
+            "keychain:agents-kitbag-claude-code-notion-acme",
+        ),
+        (&codex, "figma", "keychain:agents-kitbag-codex-figma"),
+    ] {
+        let server = match key {
+            "figma" => ServerConfig::new(
+                RUNNER,
+                [
+                    "--secret",
+                    &format!("FIGMA_API_KEY={reference}"),
+                    "--",
+                    "npx",
+                    "-y",
+                    "figma-developer-mcp",
+                    "--stdio",
+                ],
+            ),
+            _ => ServerConfig::new(
+                RUNNER,
+                [
+                    "--secret",
+                    &format!("NOTION_TOKEN={reference}"),
+                    "--",
+                    "npx",
+                    "-y",
+                    "@notionhq/notion-mcp-server",
+                ],
+            ),
+        };
+        if let Err(error) = config.set_server(key, &server) {
+            log::warn!("could not write the demo config: {error}");
+        }
+    }
     Backend {
         env,
         runner: Box::new(DemoRunner::default()),
         http: Box::new(DemoHttp),
-        config,
+        configs: vec![config, code, codex],
+        assistant: Assistant::ClaudeDesktop,
         runner_path: RUNNER.to_owned(),
         log_dir: None,
         demo: true,

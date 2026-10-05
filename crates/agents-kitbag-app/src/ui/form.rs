@@ -87,7 +87,10 @@ pub fn show(ui: &mut Ui, snapshot: &Snapshot, state: &mut State, out: &mut Vec<C
         if form.editing.is_none() {
             kit::hint(
                 ui,
-                "Lowercase letters, digits and hyphens. Claude sees the server under this name.",
+                &format!(
+                    "Lowercase letters, digits and hyphens. {} sees the server under this name.",
+                    snapshot.assistant.name()
+                ),
             );
         }
     }

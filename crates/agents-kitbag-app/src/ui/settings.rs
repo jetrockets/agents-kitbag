@@ -100,7 +100,7 @@ pub fn show(ui: &mut Ui, snapshot: &Snapshot, state: &mut State, out: &mut Vec<C
 
     kit::card(ui, |ui| {
         ui.spacing_mut().item_spacing.y = 8.0;
-        kit::section(ui, "Claude Desktop config");
+        kit::section(ui, &format!("{} config", snapshot.assistant.name()));
         kit::text(
             ui,
             &snapshot.config_path,

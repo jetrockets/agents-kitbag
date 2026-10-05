@@ -1,4 +1,4 @@
-//! agents-kitbag without a window: where Claude Desktop keeps its config,
+//! agents-kitbag without a window: where each assistant keeps its config,
 //! how a token stays out of it, what each integration needs, and whether a
 //! configured token still works.
 //!
@@ -6,8 +6,10 @@
 //! [`exec::CommandRunner`] and requests through [`http::Http`], so every
 //! behaviour is tested against fakes.
 
+pub mod assistant;
 pub mod backup;
 pub mod claude;
+pub mod codex;
 pub mod config;
 pub mod exec;
 pub mod files;

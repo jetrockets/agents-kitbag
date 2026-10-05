@@ -101,7 +101,7 @@ pub fn run(ctx: &Ctx, request: &Request) -> Result<Done, String> {
                 ctx.runner,
                 ctx.runner_path,
                 &request.store,
-                &key,
+                &ctx.config.assistant().secret_key(&key),
                 token,
                 integration.header_env_var(),
             )?;
@@ -221,6 +221,36 @@ mod tests {
                 "env": { "ASANA_ACCESS_TOKEN": "tok" }
             })
         );
+    }
+
+    #[test]
+    fn another_assistants_token_is_stored_under_a_name_of_its_own() {
+        use crate::assistant::Assistant;
+        let mut world = world();
+        world.config = ConfigFile::of(
+            Assistant::Codex,
+            world.env.home.join("config.toml"),
+            Os::Mac,
+        );
+        let runner = FakeRunner::default().on("security", "add-generic-password", ok(""));
+        let http = FakeHttp::default().on("asana.com", 200, r#"{"data":{"name":"Ada"}}"#);
+        run(
+            &ctx(&world, &runner, &http),
+            &request("asana", None, &[("token", "tok")], StoreChoice::System),
+        )
+        .unwrap();
+        let server = world.config.server("asana").unwrap().unwrap();
+        assert_eq!(server.command, RUNNER);
+        assert_eq!(
+            server.args[..2],
+            [
+                "--secret",
+                "ASANA_ACCESS_TOKEN=keychain:agents-kitbag-codex-asana"
+            ]
+        );
+        let text = std::fs::read_to_string(world.config.path()).unwrap();
+        assert!(text.contains("[mcp_servers.asana]"), "{text}");
+        assert!(!text.contains("tok\""), "{text}");
     }
 
     #[test]
