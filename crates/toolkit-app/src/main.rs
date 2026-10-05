@@ -8,6 +8,7 @@
 mod backend;
 mod demo;
 mod entrypoint;
+mod instance;
 mod snapshot;
 mod theme;
 mod ui;
