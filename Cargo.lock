@@ -122,6 +122,54 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
+name = "agents-kitbag-app"
+version = "0.24.0"
+dependencies = [
+ "agents-kitbag-core",
+ "anyhow",
+ "clap",
+ "directories",
+ "eframe",
+ "egui",
+ "egui_extras",
+ "egui_kittest",
+ "fastframe-fonts",
+ "fastframe-icons",
+ "fastframe-log",
+ "fastframe-text",
+ "fastframe-update",
+ "image",
+ "log",
+ "objc2 0.6.4",
+ "objc2-app-kit 0.3.2",
+ "objc2-foundation 0.3.2",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "agents-kitbag-core"
+version = "0.24.0"
+dependencies = [
+ "base64 0.22.1",
+ "log",
+ "native-tls",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "ureq",
+]
+
+[[package]]
+name = "agents-kitbag-runner"
+version = "0.24.0"
+dependencies = [
+ "agents-kitbag-core",
+]
+
+[[package]]
 name = "ahash"
 version = "0.8.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4031,54 +4079,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d38ac1cf9b95face32296c0a3ede1fdc270627c9d9c02a7274dd6d960dc4d56"
 dependencies = [
  "winnow",
-]
-
-[[package]]
-name = "toolkit-app"
-version = "0.23.2"
-dependencies = [
- "anyhow",
- "clap",
- "directories",
- "eframe",
- "egui",
- "egui_extras",
- "egui_kittest",
- "fastframe-fonts",
- "fastframe-icons",
- "fastframe-log",
- "fastframe-text",
- "fastframe-update",
- "image",
- "log",
- "objc2 0.6.4",
- "objc2-app-kit 0.3.2",
- "objc2-foundation 0.3.2",
- "reqwest",
- "serde",
- "serde_json",
- "tempfile",
- "toolkit-core",
-]
-
-[[package]]
-name = "toolkit-core"
-version = "0.23.2"
-dependencies = [
- "base64 0.22.1",
- "log",
- "native-tls",
- "serde",
- "serde_json",
- "tempfile",
- "ureq",
-]
-
-[[package]]
-name = "toolkit-runner"
-version = "0.23.2"
-dependencies = [
- "toolkit-core",
 ]
 
 [[package]]

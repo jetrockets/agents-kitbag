@@ -2,7 +2,7 @@
 
 The app installs an update only when the release's `checksums.txt.sig` is a
 valid Ed25519 signature, over the exact bytes of `checksums.txt`, by the key
-compiled into it from `crates/toolkit-app/assets/update-public-key.hex`.
+compiled into it from `crates/agents-kitbag-app/assets/update-public-key.hex`.
 [fastframe-update](https://github.com/crmne/fastframe/tree/main/crates/fastframe-update)
 does the checking, before it parses a checksum or downloads a package. A
 missing or invalid signature fails closed: there is no unsigned fallback and

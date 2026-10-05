@@ -65,7 +65,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y pkg-config libssl-dev libxkbcommon-dev libwayland-dev libgl1-mesa-dev
       # No compiler cache: published binaries never build from restored outputs.
-      - run: cargo build --release --locked -p toolkit-app -p toolkit-runner
+      - run: cargo build --release --locked -p agents-kitbag-app -p agents-kitbag-runner
       - name: Archive (Linux)
         if: runner.os == 'Linux'
         run: bash packaging/linux/package.sh target/release "$VERSION" dist
@@ -94,21 +94,21 @@ jobs:
       - run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
       - name: Build both architectures
         run: |
-          cargo build --release --locked --target aarch64-apple-darwin -p toolkit-app -p toolkit-runner
-          cargo build --release --locked --target x86_64-apple-darwin -p toolkit-app -p toolkit-runner
+          cargo build --release --locked --target aarch64-apple-darwin -p agents-kitbag-app -p agents-kitbag-runner
+          cargo build --release --locked --target x86_64-apple-darwin -p agents-kitbag-app -p agents-kitbag-runner
       - name: Universal binaries
         run: |
           mkdir -p universal
-          for binary in claude-toolkit claude-toolkit-runner; do
+          for binary in agents-kitbag agents-kitbag-runner; do
             lipo -create "target/aarch64-apple-darwin/release/$binary" \
               "target/x86_64-apple-darwin/release/$binary" -output "universal/$binary"
           done
       - name: App and DMG
         run: |
           mkdir -p dist
-          bash packaging/macos/bundle.sh universal/claude-toolkit universal/claude-toolkit-runner \
-            "dist/Claude Toolkit.app" "$VERSION"
-          bash packaging/macos/dmg.sh "dist/Claude Toolkit.app" "dist/claude-toolkit-v$VERSION-macos-universal.dmg"
+          bash packaging/macos/bundle.sh universal/agents-kitbag universal/agents-kitbag-runner \
+            "dist/Agents Kitbag.app" "$VERSION"
+          bash packaging/macos/dmg.sh "dist/Agents Kitbag.app" "dist/agents-kitbag-v$VERSION-macos-universal.dmg"
       - uses: actions/upload-artifact@v4
         with:
           name: macos-universal
@@ -149,7 +149,7 @@ jobs:
         uses: crmne/native-packages/.github/actions/sign-release@999768410cf53cdc68c8679c09cb14de1a6bca7b # v0.8.1
         with:
           directory: dist
-          public-key: crates/toolkit-app/assets/update-public-key.hex
+          public-key: crates/agents-kitbag-app/assets/update-public-key.hex
           key-env: UPDATE_SIGNING_KEY
         env:
           UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
@@ -168,7 +168,7 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*
-          name: Claude Toolkit ${{ github.ref_name }}
+          name: Agents Kitbag ${{ github.ref_name }}
           body_path: ${{ steps.notes.outputs.written == 'true' && 'release-notes.md' || '' }}
           generate_release_notes: ${{ steps.notes.outputs.written != 'true' }}
           # v0.24.0-rc1 is a pre-release, and installed copies are never
