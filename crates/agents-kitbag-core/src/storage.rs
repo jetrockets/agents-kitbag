@@ -233,6 +233,8 @@ pub enum Location {
     /// A reference to another system's store, in a config carried over.
     Unreadable(Backend),
     ConfigFile,
+    /// The service's own hosted server: it signs in by itself.
+    Hosted,
 }
 
 impl Location {
@@ -244,11 +246,15 @@ impl Location {
                 format!("{}, not readable on this system", backend.label())
             }
             Location::ConfigFile => "Config file (plain text)".to_owned(),
+            Location::Hosted => "Nowhere here: the server signs in by itself".to_owned(),
         }
     }
 }
 
 pub fn location(server: &ServerConfig, os: Os) -> Location {
+    if server.url().is_some() {
+        return Location::Hosted;
+    }
     if op::is_wrapped(server) {
         return Location::OnePassword;
     }
@@ -470,6 +476,11 @@ mod tests {
     #[test]
     fn locations_are_read_back_from_a_config() {
         assert_eq!(location(&asana("tok"), Os::Mac), Location::ConfigFile);
+        let mut hosted = ServerConfig::default();
+        hosted
+            .rest
+            .insert("url".to_owned(), "https://mcp.figma.com/mcp".into());
+        assert_eq!(location(&hosted, Os::Mac), Location::Hosted);
         let wrapped =
             op::wrap_with_op_run(asana("op://Private/x/credential"), "/opt/homebrew/bin/op");
         assert_eq!(location(&wrapped, Os::Mac), Location::OnePassword);

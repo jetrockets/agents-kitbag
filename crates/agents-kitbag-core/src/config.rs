@@ -53,6 +53,16 @@ impl ServerConfig {
         self
     }
 
+    /// The address of a server the assistant reaches over the network
+    /// rather than starts: the service's own hosted server, which signs in
+    /// by itself. The app writes none of these, but finds them in configs.
+    pub fn url(&self) -> Option<&str> {
+        self.command
+            .is_empty()
+            .then(|| self.rest.get("url")?.as_str())
+            .flatten()
+    }
+
     pub fn env_var(&self, name: &str) -> Option<&str> {
         self.env.as_ref()?.get(name)?.as_str()
     }
