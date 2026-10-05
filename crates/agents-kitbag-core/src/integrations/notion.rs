@@ -24,8 +24,8 @@ pub static NOTION: Integration = Integration {
     }],
     steps: &[
         "Notion tokens belong to one workspace: add each workspace separately.",
-        "On the tokens page click \"New token\" and pick the workspace Claude should reach.",
-        "Name it (for example \"Claude MCP\"), copy the token and paste it here.",
+        "On the tokens page click \"New token\" and pick the workspace the assistant should reach.",
+        "Name it (for example \"MCP\"), copy the token and paste it here.",
     ],
     token_url: Some("https://www.notion.so/developers/tokens"),
     token: TokenSource::Field,
