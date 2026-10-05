@@ -11,10 +11,10 @@ no key taken from the release being checked. The file names in
 
 The private half is `UPDATE_SIGNING_KEY`, an Ed25519 PKCS#8 PEM key, a secret
 of the `release-signing` environment. The environment takes jobs from `v*`
-tags only and requires a reviewer's approval, so a pushed tag builds the
-packages but publishes nothing until someone has looked at the commit and
-the build and approved. Only the release workflow's publish job reads the
-key, and that job builds nothing. Do not work around the approval. The pinned `sign-release` action writes the manifest,
+tags only, so no other workflow run, branch or pull request can read it.
+Only the release workflow's publish job reads the key, and that job builds
+nothing. There is no approval step: whoever can push a `v*` tag can publish
+to every installed copy, and only the people with write access can. The pinned `sign-release` action writes the manifest,
 checks that the secret matches the committed public key, signs, and verifies
 what it wrote.
 

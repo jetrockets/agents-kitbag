@@ -101,11 +101,10 @@ latest release and offers it.
    not do.
 2. Tag `vX.Y.Z` (annotated) and push the tag.
 3. `release.yml` builds a universal macOS disk image, a Windows portable
-   archive and a Linux `tar.gz`, then waits: the publish job runs in the
-   `release-signing` environment, which needs a reviewer's approval (the
-   run's page, Review deployments). Once approved it signs `checksums.txt`
-   with the update key and publishes a GitHub release as the latest.
-   Nothing is code-signed yet.
+   archive and a Linux `tar.gz`, signs `checksums.txt` with the update key
+   (kept in the `release-signing` environment, which only `v*` tags can
+   use), and publishes a GitHub release as the latest. Nothing is
+   code-signed yet.
 
 `main` takes changes through pull requests only, with green `quality` and
 `test` checks, for everyone. A pull request also needs the approval of the
