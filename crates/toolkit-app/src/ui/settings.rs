@@ -7,6 +7,7 @@ use super::kit::{self, Kind};
 use super::{Confirm, State};
 use crate::snapshot::Snapshot;
 use crate::theme::palette;
+use crate::updates::Checked;
 use crate::worker::Command;
 
 fn file_manager(os: Os) -> &'static str {
@@ -14,6 +15,25 @@ fn file_manager(os: Os) -> &'static str {
         Os::Mac => "Show in Finder",
         Os::Windows => "Show in Explorer",
         Os::Linux => "Show in Files",
+    }
+}
+
+/// What the About card says about updates: the download under way or the
+/// release on offer first, then how the last look ended.
+pub fn update_line(state: &State) -> String {
+    match (&state.update, &state.update_check) {
+        (_, Checked::Checking) => "Looking for a newer version...".to_owned(),
+        (Some(offer), _) if offer.downloading => format!("Downloading {}...", offer.version),
+        (Some(offer), _) if offer.failed => format!("Updating to {} failed.", offer.version),
+        (Some(offer), _) => format!("Version {} is available.", offer.version),
+        (None, Checked::UpToDate) => "This is the newest version.".to_owned(),
+        (None, Checked::Elsewhere { version, reason }) => {
+            format!("Version {version} is out, but this copy does not update itself. {reason}")
+        }
+        (None, Checked::Unreachable(reason)) => format!("Could not check for updates: {reason}"),
+        (None, Checked::Never | Checked::Available) => {
+            "Updates are looked for when the app starts and every six hours.".to_owned()
+        }
     }
 }
 
@@ -102,13 +122,39 @@ pub fn show(ui: &mut Ui, snapshot: &Snapshot, state: &mut State, out: &mut Vec<C
             kit::regular(kit::SM),
             p.text_secondary,
         );
-        let update = match &state.update {
-            Some(offer) if offer.downloading => format!("Downloading {}...", offer.version),
-            Some(offer) if offer.failed => format!("Updating to {} failed.", offer.version),
-            Some(offer) => format!("Version {} is available.", offer.version),
-            None => "No update is waiting.".to_owned(),
-        };
-        kit::text(ui, &update, kit::regular(kit::SM), p.text_secondary);
+        ui.horizontal(|ui| {
+            if state.update_check == Checked::Checking {
+                ui.add(eframe::egui::Spinner::new().size(14.0));
+            }
+            kit::text(
+                ui,
+                &update_line(state),
+                kit::regular(kit::SM),
+                p.text_secondary,
+            );
+        });
+        ui.horizontal(|ui| {
+            if let Some(offer) = &state.update {
+                let label = if offer.failed {
+                    "Try again"
+                } else {
+                    "Restart to update"
+                };
+                if kit::button(ui, label, Kind::Primary, !offer.downloading).clicked() {
+                    state.update_requested = true;
+                }
+            }
+            if kit::button(
+                ui,
+                "Check for updates",
+                Kind::Secondary,
+                state.can_check_updates,
+            )
+            .clicked()
+            {
+                state.update_check_requested = true;
+            }
+        });
         if let Some(log_dir) = &snapshot.log_dir {
             kit::text(
                 ui,
