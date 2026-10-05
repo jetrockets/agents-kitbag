@@ -1,12 +1,14 @@
-# Claude Toolkit
+# Agents Kitbag
 
-MCP servers for Claude Desktop, set up from one window: Jira, Linear, Notion,
-Azure DevOps, Asana, GitHub and Figma. A native app for macOS, Windows and
-Linux, written in Rust on egui and [fastframe](https://github.com/crmne/fastframe).
+What your AI assistant is equipped with, set up from one window. Today that
+is MCP servers for Claude Desktop: Jira, Linear, Notion, Azure DevOps, Asana,
+GitHub and Figma, each with its token kept out of the config and checked that
+it still works. A native app for macOS, Windows and Linux, written in Rust on
+egui and [fastframe](https://github.com/crmne/fastframe).
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/window-light.png">
-  <img src="docs/screenshots/window-dark.png" alt="Claude Toolkit: the integrations in a sidebar, and a Jira server with a working token kept in the Keychain">
+  <img src="docs/screenshots/window-dark.png" alt="Agents Kitbag: the integrations in a sidebar, and a Jira server with a working token kept in the Keychain">
 </picture>
 
 A sidebar lists the integrations with a mark for the state of their tokens. The
@@ -16,21 +18,21 @@ whether it still works, and the form that sets one up.
 ## Install
 
 Download the package for your system from the
-[latest release](https://github.com/jetrockets/claude-toolkit/releases/latest).
+[latest release](https://github.com/jetrockets/agents-kitbag/releases/latest).
 The app updates itself from then on.
 
-**macOS.** Open `claude-toolkit-v<version>-macos-universal.dmg` and drag Claude
-Toolkit to Applications. The app is not signed with an Apple Developer ID yet,
+**macOS.** Open `agents-kitbag-v<version>-macos-universal.dmg` and drag Agents Kitbag to
+Applications. The app is not signed with an Apple Developer ID yet,
 so the first time: right-click it, Open, Open. Run it from Applications, not
 from the disk image: servers with a stored token are started through a program
 inside the app, and the config points at it.
 
-**Windows.** Unpack `claude-toolkit-v<version>-x86_64-pc-windows-msvc.zip` into
-a folder that will stay, and run `claude-toolkit.exe`. SmartScreen will ask the
+**Windows.** Unpack `agents-kitbag-v<version>-x86_64-pc-windows-msvc.zip` into
+a folder that will stay, and run `agents-kitbag.exe`. SmartScreen will ask the
 first time: More info, Run anyway.
 
-**Linux.** Unpack `claude-toolkit-v<version>-x86_64-unknown-linux-gnu.tar.gz`
-and run `./install.sh`. It puts the app in `~/.local/share/claude-toolkit` and
+**Linux.** Unpack `agents-kitbag-v<version>-x86_64-unknown-linux-gnu.tar.gz`
+and run `./install.sh`. It puts the app in `~/.local/share/agents-kitbag` and
 in the applications menu.
 
 The MCP servers themselves need [Node.js](https://nodejs.org/) (`npx`), and
@@ -71,20 +73,20 @@ plain text on its own.
 
 ### The system credential store
 
-The server is started through `claude-toolkit-runner`, which sits beside the
+The server is started through `agents-kitbag-runner`, which sits beside the
 app, reads the secret and hands it to the server:
 
 ```jsonc
 {
-  "command": "/Applications/Claude Toolkit.app/Contents/MacOS/claude-toolkit-runner",
-  "args": ["--secret", "ASANA_ACCESS_TOKEN=keychain:claude-mcp-asana",
+  "command": "/Applications/Agents Kitbag.app/Contents/MacOS/agents-kitbag-runner",
+  "args": ["--secret", "ASANA_ACCESS_TOKEN=keychain:agents-kitbag-asana",
            "--", "npx", "-y", "@roychri/mcp-server-asana@beta"],
   "env": {}
 }
 ```
 
 References are `keychain:` (macOS `security`), `dpapi:` (a DPAPI-encrypted file
-under `%APPDATA%\claude-toolkit\secrets`, readable only by that user on that
+under `%APPDATA%\agents-kitbag\secrets`, readable only by that user on that
 machine), `libsecret:` (Linux `secret-tool`) and `gh:` (asks the GitHub CLI,
 stores nothing). Secrets are written through stdin, never as command
 arguments, which any process on the machine can read. The store's own programs
@@ -99,7 +101,7 @@ The server is started through `op run`, which resolves the reference:
 {
   "command": "/opt/homebrew/bin/op",
   "args": ["run", "--no-masking", "--", "npx", "-y", "@roychri/mcp-server-asana@beta"],
-  "env": { "ASANA_ACCESS_TOKEN": "op://Private/Claude MCP - asana/credential" }
+  "env": { "ASANA_ACCESS_TOKEN": "op://Private/Agents Kitbag - asana/credential" }
 }
 ```
 
@@ -149,12 +151,12 @@ requirements.
 ## Build from source
 
 ```bash
-cargo run -p toolkit-app -- --demo   # made-up servers, nothing sent or stored
-cargo run -p toolkit-app             # your real Claude Desktop config
+cargo run -p agents-kitbag-app -- --demo   # made-up servers, nothing sent or stored
+cargo run -p agents-kitbag-app             # your real Claude Desktop config
 ```
 
-Three crates: `toolkit-core` (the config, the stores, the integrations and
-their checks, with no window), `toolkit-app` (the window) and `toolkit-runner`
+Three crates: `agents-kitbag-core` (the config, the stores, the integrations and
+their checks, with no window), `agents-kitbag-app` (the window) and `agents-kitbag-runner`
 (the program that starts a server with its token). See [AGENTS.md](AGENTS.md)
 for the architecture, the checks and how a release is made.
 

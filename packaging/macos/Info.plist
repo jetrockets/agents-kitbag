@@ -2,11 +2,11 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key><string>Claude Toolkit</string>
-    <key>CFBundleDisplayName</key><string>Claude Toolkit</string>
-    <key>CFBundleIdentifier</key><string>com.jetrockets.claude-toolkit</string>
-    <key>CFBundleExecutable</key><string>claude-toolkit</string>
-    <key>CFBundleIconFile</key><string>claude-toolkit</string>
+    <key>CFBundleName</key><string>Agents Kitbag</string>
+    <key>CFBundleDisplayName</key><string>Agents Kitbag</string>
+    <key>CFBundleIdentifier</key><string>com.jetrockets.agents-kitbag</string>
+    <key>CFBundleExecutable</key><string>agents-kitbag</string>
+    <key>CFBundleIconFile</key><string>agents-kitbag</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>__VERSION__</string>
     <key>CFBundleVersion</key><string>__VERSION__</string>

@@ -1,10 +1,10 @@
 #!/bin/bash
-# Put "Claude Toolkit.app" in a disk image with a link to Applications.
+# Put "Agents Kitbag.app" in a disk image with a link to Applications.
 #
-#   packaging/macos/dmg.sh <Claude Toolkit.app> <output.dmg>
+#   packaging/macos/dmg.sh <Agents Kitbag.app> <output.dmg>
 #
 # The name fastframe-update looks for is
-# claude-toolkit-v<version>-macos-universal.dmg.
+# agents-kitbag-v<version>-macos-universal.dmg.
 set -euo pipefail
 
 app="$1"
@@ -15,7 +15,7 @@ staging="$(mktemp -d)"
 trap 'rm -rf "$staging"' EXIT
 cp -R "$app" "$staging/"
 ln -s /Applications "$staging/Applications"
-hdiutil create -volname "Claude Toolkit" -srcfolder "$staging" -format UDZO "$output" >/dev/null
+hdiutil create -volname "Agents Kitbag" -srcfolder "$staging" -format UDZO "$output" >/dev/null
 hdiutil verify "$output" >/dev/null
 
 echo "$output"

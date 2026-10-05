@@ -5,10 +5,10 @@ name: Packaging
 # changes. No signing here.
 on:
   pull_request:
-    paths: [packaging/**, Cargo.toml, Cargo.lock, rust-toolchain.toml, crates/toolkit-app/Cargo.toml, crates/toolkit-app/src/main.rs, crates/toolkit-app/src/entrypoint.rs, crates/toolkit-app/src/updates.rs, crates/toolkit-runner/**, .github/workflows/packaging.yml, .github/workflows/release.yml]
+    paths: [packaging/**, Cargo.toml, Cargo.lock, rust-toolchain.toml, crates/agents-kitbag-app/Cargo.toml, crates/agents-kitbag-app/src/main.rs, crates/agents-kitbag-app/src/entrypoint.rs, crates/agents-kitbag-app/src/updates.rs, crates/agents-kitbag-runner/**, .github/workflows/packaging.yml, .github/workflows/release.yml]
   push:
     branches: [main]
-    paths: [packaging/**, Cargo.toml, Cargo.lock, rust-toolchain.toml, crates/toolkit-app/Cargo.toml, crates/toolkit-app/src/main.rs, crates/toolkit-app/src/entrypoint.rs, crates/toolkit-app/src/updates.rs, crates/toolkit-runner/**, .github/workflows/packaging.yml, .github/workflows/release.yml]
+    paths: [packaging/**, Cargo.toml, Cargo.lock, rust-toolchain.toml, crates/agents-kitbag-app/Cargo.toml, crates/agents-kitbag-app/src/main.rs, crates/agents-kitbag-app/src/entrypoint.rs, crates/agents-kitbag-app/src/updates.rs, crates/agents-kitbag-runner/**, .github/workflows/packaging.yml, .github/workflows/release.yml]
   workflow_dispatch:
 
 permissions:
@@ -32,12 +32,12 @@ jobs:
       - run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
       - name: Build both architectures
         run: |
-          cargo build --release --locked --target aarch64-apple-darwin -p toolkit-app -p toolkit-runner
-          cargo build --release --locked --target x86_64-apple-darwin -p toolkit-app -p toolkit-runner
+          cargo build --release --locked --target aarch64-apple-darwin -p agents-kitbag-app -p agents-kitbag-runner
+          cargo build --release --locked --target x86_64-apple-darwin -p agents-kitbag-app -p agents-kitbag-runner
       - name: Universal binaries
         run: |
           mkdir -p universal
-          for binary in claude-toolkit claude-toolkit-runner; do
+          for binary in agents-kitbag agents-kitbag-runner; do
             lipo -create "target/aarch64-apple-darwin/release/$binary" \
               "target/x86_64-apple-darwin/release/$binary" -output "universal/$binary"
             lipo -archs "universal/$binary"
@@ -45,19 +45,19 @@ jobs:
       - name: App and DMG (ad-hoc signed)
         run: |
           mkdir -p dist
-          bash packaging/macos/bundle.sh universal/claude-toolkit universal/claude-toolkit-runner \
-            "dist/Claude Toolkit.app" 0.0.0-dev
-          bash packaging/macos/dmg.sh "dist/Claude Toolkit.app" dist/claude-toolkit-dev-macos-universal.dmg
+          bash packaging/macos/bundle.sh universal/agents-kitbag universal/agents-kitbag-runner \
+            "dist/Agents Kitbag.app" 0.0.0-dev
+          bash packaging/macos/dmg.sh "dist/Agents Kitbag.app" dist/agents-kitbag-dev-macos-universal.dmg
       - name: The DMG opens and the app runs
         run: |
-          hdiutil attach -nobrowse -mountpoint /tmp/claude-toolkit-dmg dist/claude-toolkit-dev-macos-universal.dmg
-          app="/tmp/claude-toolkit-dmg/Claude Toolkit.app"
-          test -L /tmp/claude-toolkit-dmg/Applications
-          "$app/Contents/MacOS/claude-toolkit" --version
-          "$app/Contents/MacOS/claude-toolkit-runner" --version
-          test -f "$app/Contents/Resources/claude-toolkit.icns"
+          hdiutil attach -nobrowse -mountpoint /tmp/agents-kitbag-dmg dist/agents-kitbag-dev-macos-universal.dmg
+          app="/tmp/agents-kitbag-dmg/Agents Kitbag.app"
+          test -L /tmp/agents-kitbag-dmg/Applications
+          "$app/Contents/MacOS/agents-kitbag" --version
+          "$app/Contents/MacOS/agents-kitbag-runner" --version
+          test -f "$app/Contents/Resources/agents-kitbag.icns"
           codesign --verify --strict "$app"
-          hdiutil detach /tmp/claude-toolkit-dmg
+          hdiutil detach /tmp/agents-kitbag-dmg
 
   windows:
     name: Windows archive
@@ -66,22 +66,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: rustup show active-toolchain || rustup toolchain install
-      - run: cargo build --release --locked -p toolkit-app -p toolkit-runner
+      - run: cargo build --release --locked -p agents-kitbag-app -p agents-kitbag-runner
       - name: Archive
         shell: pwsh
         run: packaging\windows\package.ps1 -BinDir target\release -Version 0.0.0-dev -OutDir dist
       - name: Unpack and run
         shell: pwsh
         run: |
-          Expand-Archive (Get-ChildItem dist\*.zip).FullName -DestinationPath "$env:RUNNER_TEMP\Claude Toolkit"
-          $app = (Get-ChildItem "$env:RUNNER_TEMP\Claude Toolkit" -Directory | Select-Object -First 1).FullName
+          Expand-Archive (Get-ChildItem dist\*.zip).FullName -DestinationPath "$env:RUNNER_TEMP\Agents Kitbag"
+          $app = (Get-ChildItem "$env:RUNNER_TEMP\Agents Kitbag" -Directory | Select-Object -First 1).FullName
           # The marker that lets a copy update itself.
-          if ((Get-Content "$app\claude-toolkit-portable.txt" -Raw) -ne 'claude-toolkit-portable-v1') { throw 'marker' }
-          & "$app\claude-toolkit-runner.exe" --version
+          if ((Get-Content "$app\agents-kitbag-portable.txt" -Raw) -ne 'agents-kitbag-portable-v1') { throw 'marker' }
+          & "$app\agents-kitbag-runner.exe" --version
           if ($LASTEXITCODE -ne 0) { throw "the runner exited $LASTEXITCODE" }
           # A GUI program: check the exit code, there is no console output.
-          $run = Start-Process "$app\claude-toolkit.exe" -ArgumentList '--version' -Wait -PassThru
-          if ($run.ExitCode -ne 0) { throw "claude-toolkit --version exited $($run.ExitCode)" }
+          $run = Start-Process "$app\agents-kitbag.exe" -ArgumentList '--version' -Wait -PassThru
+          if ($run.ExitCode -ne 0) { throw "agents-kitbag --version exited $($run.ExitCode)" }
 
   linux:
     name: Linux archive
@@ -96,16 +96,16 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y pkg-config libssl-dev libxkbcommon-dev libwayland-dev libgl1-mesa-dev
-      - run: cargo build --release --locked -p toolkit-app -p toolkit-runner
+      - run: cargo build --release --locked -p agents-kitbag-app -p agents-kitbag-runner
       - name: Archive
         run: bash packaging/linux/package.sh target/release 0.0.0-dev dist
       - name: Unpack, install and run
         run: |
           tar -xzf dist/*.tar.gz -C "$RUNNER_TEMP"
-          XDG_DATA_HOME="$RUNNER_TEMP/data" sh "$RUNNER_TEMP"/claude-toolkit-v*/install.sh
-          installed="$RUNNER_TEMP/data/claude-toolkit"
-          "$installed/claude-toolkit" --version
-          "$installed/claude-toolkit-runner" --version
-          test "$(cat "$installed/claude-toolkit-portable.txt")" = "claude-toolkit-portable-v1"
-          grep -q "Exec=\"$installed/claude-toolkit\"" "$RUNNER_TEMP/data/applications/claude-toolkit.desktop"
-          test -s "$RUNNER_TEMP/data/icons/hicolor/512x512/apps/claude-toolkit.png"
+          XDG_DATA_HOME="$RUNNER_TEMP/data" sh "$RUNNER_TEMP"/agents-kitbag-v*/install.sh
+          installed="$RUNNER_TEMP/data/agents-kitbag"
+          "$installed/agents-kitbag" --version
+          "$installed/agents-kitbag-runner" --version
+          test "$(cat "$installed/agents-kitbag-portable.txt")" = "agents-kitbag-portable-v1"
+          grep -q "Exec=\"$installed/agents-kitbag\"" "$RUNNER_TEMP/data/applications/agents-kitbag.desktop"
+          test -s "$RUNNER_TEMP/data/icons/hicolor/512x512/apps/agents-kitbag.png"

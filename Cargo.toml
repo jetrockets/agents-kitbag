@@ -1,9 +1,9 @@
 [workspace]
 resolver = "3"
-members = ["crates/toolkit-core", "crates/toolkit-app", "crates/toolkit-runner"]
+members = ["crates/agents-kitbag-core", "crates/agents-kitbag-app", "crates/agents-kitbag-runner"]
 
 [workspace.package]
-version = "0.23.2"
+version = "0.24.0"
 edition = "2024"
 rust-version = "1.98"
 license = "MIT"
@@ -19,9 +19,9 @@ unwrap_used = "warn"
 
 [workspace.dependencies]
 # Without features here: the runner leaves the HTTP client out.
-toolkit-core = { path = "crates/toolkit-core", default-features = false }
+agents-kitbag-core = { path = "crates/agents-kitbag-core", default-features = false }
 serde = { version = "1", features = ["derive"] }
-# preserve_order: a config rewritten by the toolkit keeps the key order the
+# preserve_order: a config rewritten by Agents Kitbag keeps the key order the
 # person (or Claude Desktop) gave it.
 serde_json = { version = "1", features = ["preserve_order"] }
 log = "0.4"
