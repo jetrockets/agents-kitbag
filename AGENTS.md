@@ -107,9 +107,10 @@ latest release and offers it.
    with the update key and publishes a GitHub release as the latest.
    Nothing is code-signed yet.
 
-`main` takes changes through pull requests only, with one approving review
-and green `quality` and `test` checks. Release tags cannot be moved or
-deleted.
+`main` takes changes through pull requests only, with green `quality` and
+`test` checks, for everyone. A pull request also needs the approval of the
+code owner (`.github/CODEOWNERS`); repository admins may merge without it.
+Release tags cannot be moved or deleted.
 
 A tag with a hyphen (`v0.24.0-rc1`) is a pre-release: published, never the
 latest, so nobody is offered it. Dry run without publishing:
