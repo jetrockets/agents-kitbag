@@ -116,20 +116,16 @@ impl HealthCtx<'_> {
     /// those in headers at launch), or a binding on the runner's command
     /// line. A check needs the real value behind all four.
     pub fn secret(&self, server: &ServerConfig, value: Option<&str>) -> Option<Secret> {
-        let mut value = value.map(str::to_owned);
-        let placeholder = value
-            .as_deref()
-            .and_then(|v| v.strip_prefix("${")?.strip_suffix('}'))
-            .map(str::to_owned);
-        if let Some(variable) = placeholder {
-            if let Some(reference) = runner::binding(server, Some(&variable)) {
-                return self.stored(&reference);
-            }
-            value = server.env_var(&variable).map(str::to_owned);
-        }
+        let value = match value.and_then(|v| v.strip_prefix("${")?.strip_suffix('}')) {
+            Some(variable) => match runner::binding(server, Some(variable)) {
+                Some(reference) => return self.stored(&reference),
+                None => server.env_var(variable),
+            },
+            None => value,
+        };
         match value.filter(|v| !v.is_empty()) {
             None => self.stored(&runner::binding(server, None)?),
-            Some(reference) if op::is_secret_ref(&reference) => self.op.as_ref()?.read(&reference),
+            Some(reference) if op::is_secret_ref(reference) => self.op.as_ref()?.read(reference),
             Some(literal) => Some(Secret::new(literal)),
         }
     }

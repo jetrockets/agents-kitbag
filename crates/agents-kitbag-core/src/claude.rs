@@ -56,13 +56,14 @@ fn restart_waiting(runner: &dyn CommandRunner, os: Os, pause: Duration) -> Resta
         return Restart::NotRunning;
     }
     runner.run("/usr/bin/pkill", &["-x", "Claude"], None);
-    for _ in 0..20 {
-        if !is_running(runner, os) {
-            break;
+    let quit = (0..20).any(|_| {
+        let gone = !is_running(runner, os);
+        if !gone {
+            std::thread::sleep(pause);
         }
-        std::thread::sleep(pause);
-    }
-    if is_running(runner, os) {
+        gone
+    });
+    if !quit {
         return Restart::DidNotQuit;
     }
     runner.run("/usr/bin/open", &["-a", "Claude"], None);
@@ -72,6 +73,8 @@ fn restart_waiting(runner: &dyn CommandRunner, os: Os, pause: Duration) -> Resta
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
     use crate::testing::{FakeRunner, fail, ok};
 
     #[test]
@@ -90,57 +93,45 @@ mod tests {
     }
 
     /// A Claude that is running until it is told to quit, or for good.
-    struct Claude {
-        quits: bool,
-        calls: std::sync::Mutex<Vec<String>>,
+    fn claude(quits: bool) -> FakeRunner {
+        let killed = AtomicBool::new(false);
+        FakeRunner::default().when(move |program, _, _| {
+            if program.ends_with("pkill") {
+                killed.store(true, Ordering::Relaxed);
+            }
+            let gone = program.ends_with("pgrep") && quits && killed.load(Ordering::Relaxed);
+            Some(if gone { fail(1, "") } else { ok("123") })
+        })
     }
 
-    impl Claude {
-        fn new(quits: bool) -> Self {
-            Self {
-                quits,
-                calls: std::sync::Mutex::new(Vec::new()),
-            }
-        }
-
-        fn calls(&self) -> Vec<String> {
-            self.calls.lock().unwrap().clone()
-        }
-    }
-
-    impl CommandRunner for Claude {
-        fn run(&self, program: &str, _: &[&str], _: Option<&str>) -> crate::exec::Output {
-            let mut calls = self.calls.lock().unwrap();
-            let killed = calls.iter().any(|call| call.ends_with("pkill"));
-            calls.push(program.to_owned());
-            if program.ends_with("pgrep") && killed && self.quits {
-                fail(1, "")
-            } else {
-                ok("123")
-            }
-        }
+    fn programs(runner: &FakeRunner) -> Vec<String> {
+        runner
+            .calls()
+            .into_iter()
+            .map(|call| call.program)
+            .collect()
     }
 
     #[test]
     fn a_running_claude_is_quit_and_opened_again() {
-        let runner = Claude::new(true);
+        let runner = claude(true);
         assert_eq!(
             restart_waiting(&runner, Os::Mac, Duration::ZERO),
             Restart::Restarted
         );
-        let programs = runner.calls();
+        let programs = programs(&runner);
         assert_eq!(programs[1], "/usr/bin/pkill");
         assert_eq!(programs.last().unwrap(), "/usr/bin/open");
     }
 
     #[test]
     fn a_claude_that_will_not_quit_is_not_called_restarted() {
-        let runner = Claude::new(false);
+        let runner = claude(false);
         assert_eq!(
             restart_waiting(&runner, Os::Mac, Duration::ZERO),
             Restart::DidNotQuit
         );
-        assert!(!runner.calls().iter().any(|call| call.ends_with("open")));
+        assert!(!programs(&runner).iter().any(|call| call.ends_with("open")));
     }
 
     #[test]

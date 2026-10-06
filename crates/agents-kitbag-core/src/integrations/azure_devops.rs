@@ -11,12 +11,7 @@ fn organization(input: &str) -> String {
             .unwrap_or_default()
             .to_owned();
     }
-    let host = input
-        .split_once("://")
-        .map_or(input, |(_, rest)| rest)
-        .split(['/', '?', '#'])
-        .next()
-        .unwrap_or_default();
+    let (_, host, _) = crate::validation::url_parts(input);
     match host.strip_suffix(".visualstudio.com") {
         Some(name) if !name.is_empty() => name.to_owned(),
         _ => input.to_owned(),

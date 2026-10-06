@@ -169,7 +169,21 @@ pub fn keep(
 
 impl Stored {
     /// Rewrites the finished server config to fetch the secret at launch.
-    pub fn apply(&self, server: ServerConfig) -> ServerConfig {
+    /// A server built with [`PLACEHOLDER`] for a token gets [`Self::value`]
+    /// there first, so it can be built before the token is stored.
+    pub fn apply(&self, mut server: ServerConfig) -> ServerConfig {
+        if self.value != PLACEHOLDER {
+            for arg in &mut server.args {
+                if arg.contains(PLACEHOLDER) {
+                    *arg = arg.replace(PLACEHOLDER, &self.value);
+                }
+            }
+            for value in server.env.iter_mut().flat_map(|env| env.values_mut()) {
+                if value.as_str() == Some(PLACEHOLDER) {
+                    *value = Value::String(self.value.clone());
+                }
+            }
+        }
         match &self.rewrite {
             Rewrite::None => server,
             Rewrite::Op {
@@ -177,7 +191,6 @@ impl Stored {
                 env_var,
                 reference,
             } => {
-                let mut server = server;
                 if let Some(var) = env_var {
                     server
                         .env

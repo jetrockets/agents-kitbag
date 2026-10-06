@@ -112,16 +112,7 @@ pub enum Kind {
 }
 
 pub fn kind(server: &ServerConfig) -> Option<Kind> {
-    let bin = server
-        .command
-        .rsplit(['/', '\\'])
-        .next()
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    if [NAME, FORMER_NAME]
-        .iter()
-        .any(|name| bin == *name || bin == format!("{name}.exe"))
-    {
+    if [NAME, FORMER_NAME].contains(&crate::exec::program_name(&server.command).as_str()) {
         return Some(Kind::Native);
     }
     before_separator(server)
@@ -139,15 +130,20 @@ fn before_separator(server: &ServerConfig) -> &[String] {
     &server.args[..stop]
 }
 
+/// Every `VAR=reference` given with `--secret` on a runner's command line.
+pub fn secrets(server: &ServerConfig) -> impl Iterator<Item = &str> {
+    before_separator(server)
+        .windows(2)
+        .filter(|pair| pair[0] == "--secret")
+        .map(|pair| pair[1].as_str())
+}
+
 /// The reference bound to `variable` on a runner's command line, or the first
 /// binding when no variable is named.
 pub fn binding(server: &ServerConfig, variable: Option<&str>) -> Option<String> {
     kind(server)?;
-    let args = before_separator(server);
-    args.iter()
-        .enumerate()
-        .filter(|(_, arg)| *arg == "--secret")
-        .filter_map(|(i, _)| args.get(i + 1)?.split_once('='))
+    secrets(server)
+        .filter_map(|secret| secret.split_once('='))
         .find(|(name, _)| variable.is_none_or(|v| v == *name))
         .map(|(_, reference)| reference.to_owned())
         .filter(|reference| !reference.is_empty())

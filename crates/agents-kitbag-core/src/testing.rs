@@ -50,6 +50,16 @@ impl FakeRunner {
         self
     }
 
+    /// Answers with whatever `rule` does, for answers that change as the
+    /// calls go by.
+    pub fn when(
+        mut self,
+        rule: impl Fn(&str, &[&str], Option<&str>) -> Option<Output> + Send + Sync + 'static,
+    ) -> Self {
+        self.rules.push(Box::new(rule));
+        self
+    }
+
     pub fn calls(&self) -> Vec<Call> {
         self.calls.lock().unwrap().clone()
     }

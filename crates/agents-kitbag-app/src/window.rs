@@ -116,7 +116,7 @@ impl eframe::App for Window {
         // Claude Desktop or an editor may have changed the
         // config while the window was in the background.
         let focused = ctx.input(|i| i.viewport().focused).unwrap_or(true);
-        if focused && !std::mem::replace(&mut self.was_focused, focused) {
+        if focused && !self.was_focused {
             self.worker.send(Command::Refresh);
         }
         self.was_focused = focused;

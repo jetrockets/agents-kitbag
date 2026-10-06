@@ -42,9 +42,9 @@ struct DemoRunner {
 
 impl CommandRunner for DemoRunner {
     fn run(&self, program: &str, args: &[&str], _input: Option<&str>) -> Output {
-        let name = program.rsplit(['/', '\\']).next().unwrap_or(program);
+        let name = agents_kitbag_core::exec::program_name(program);
         let has = |arg: &str| args.contains(&arg);
-        match name {
+        match name.as_str() {
             "security" if has("find-generic-password") => ok("demo-token\n"),
             "security" => ok(""),
             "gh" if has("--version") => ok("gh version 2.60.0\n"),

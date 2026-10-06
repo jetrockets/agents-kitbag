@@ -101,7 +101,7 @@ pub fn run(ctx: &Ctx, request: &Request) -> Result<Done, String> {
             // package will not install. Otherwise a failed Save would leave
             // a secret behind in the store.
             ctx.config.servers()?;
-            (integration.build)(&request.values, storage::PLACEHOLDER, ctx.packages)?;
+            let server = (integration.build)(&request.values, storage::PLACEHOLDER, ctx.packages)?;
             let stored = storage::keep(
                 ctx.env,
                 ctx.runner,
@@ -111,11 +111,7 @@ pub fn run(ctx: &Ctx, request: &Request) -> Result<Done, String> {
                 token,
                 integration.header_env_var(),
             )?;
-            stored.apply((integration.build)(
-                &request.values,
-                &stored.value,
-                ctx.packages,
-            )?)
+            stored.apply(server)
         }
     };
     ctx.config.set_server(&key, &server)?;
@@ -174,6 +170,34 @@ mod tests {
         ctx.packages = &Npx;
         assert!(run(&ctx, &asana).unwrap_err().contains("not valid JSON"));
         assert!(runner.calls().is_empty(), "the token was stored anyway");
+    }
+
+    /// On Windows a build installs the package, which takes a while.
+    #[test]
+    fn a_save_builds_the_server_once() {
+        struct Counted(std::sync::atomic::AtomicUsize);
+        impl Packages for Counted {
+            fn entry(&self, spec: &str, extra: &[&str]) -> Result<ServerConfig, String> {
+                self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                Npx.entry(spec, extra)
+            }
+        }
+        let world = world();
+        let runner = FakeRunner::default().on("security", "add-generic-password", ok(""));
+        let http = FakeHttp::default().on("asana.com", 200, r#"{"data":{"name":"Ada"}}"#);
+        let packages = Counted(std::sync::atomic::AtomicUsize::new(0));
+
+        let mut ctx = ctx(&world, &runner, &http);
+        ctx.packages = &packages;
+        for store in [StoreChoice::System, StoreChoice::Plain] {
+            run(&ctx, &request("asana", None, &[("token", "tok")], store)).unwrap();
+        }
+        assert_eq!(packages.0.into_inner(), 2, "one build for each Save");
+        assert_eq!(
+            written(&world, "asana")["env"]["ASANA_ACCESS_TOKEN"],
+            "tok",
+            "the plain token replaces the placeholder"
+        );
     }
 
     const RUNNER: &str = "/Applications/Agents Kitbag.app/Contents/MacOS/agents-kitbag-runner";

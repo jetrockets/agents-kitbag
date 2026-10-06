@@ -21,13 +21,19 @@ pub fn validate_name(name: &str) -> Result<(), &'static str> {
 /// from `https://acme.atlassian.net/jira/software/...`. A bare host gets
 /// `https://`.
 pub fn strip_url(input: &str) -> String {
+    let (scheme, host, _) = url_parts(input);
+    format!("{scheme}://{host}")
+}
+
+/// The scheme (`https` when there is none), the host, and what follows it.
+pub(crate) fn url_parts(input: &str) -> (&str, &str, &str) {
     let input = input.trim();
     let (scheme, rest) = match input.split_once("://") {
         Some((scheme, rest)) if !scheme.is_empty() => (scheme, rest),
         _ => ("https", input),
     };
-    let host = rest.split(['/', '?', '#']).next().unwrap_or_default();
-    format!("{scheme}://{host}")
+    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    (scheme, &rest[..end], &rest[end..])
 }
 
 /// Where a Jira site answers from. Atlassian's cloud is always the origin.
@@ -49,15 +55,11 @@ pub fn jira_base(input: &str) -> String {
         "wiki",
         "s",
     ];
-    let origin = strip_url(input);
-    let host = origin.split_once("://").map_or("", |(_, host)| host);
+    let (scheme, host, rest) = url_parts(input);
+    let origin = format!("{scheme}://{host}");
     if host.ends_with(".atlassian.net") || host.ends_with(".jira.com") {
         return origin;
     }
-    let rest = input
-        .trim()
-        .split_once("://")
-        .map_or(input.trim(), |(_, r)| r);
     let path = rest.split(['?', '#']).next().unwrap_or_default();
     let kept: Vec<&str> = path
         .split('/')

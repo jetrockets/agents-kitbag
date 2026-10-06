@@ -93,6 +93,7 @@ enum Found {
     Unreachable(String),
 }
 
+#[derive(Clone)]
 pub struct Updates {
     phase: Arc<Mutex<Phase>>,
     release: Arc<Mutex<Option<Release>>>,
@@ -117,7 +118,7 @@ impl Updates {
             ctx: Some(ctx),
             ..Self::disabled()
         };
-        let looker = updates.looker();
+        let looker = updates.clone();
         thread::spawn(move || {
             if let Some(folder) = installation_folder() {
                 clean_staging(&folder, SystemTime::now());
@@ -130,22 +131,13 @@ impl Updates {
         updates
     }
 
-    fn looker(&self) -> Looker {
-        Looker {
-            phase: Arc::clone(&self.phase),
-            release: Arc::clone(&self.release),
-            checked: Arc::clone(&self.checked),
-            ctx: self.ctx.clone(),
-        }
-    }
-
     /// Looks now, because the person asked. Nothing happens in `--demo`,
     /// while a look is under way, or once an update is being installed.
     pub fn check_now(&self) {
         if self.ctx.is_none() {
             return;
         }
-        let looker = self.looker();
+        let looker = self.clone();
         thread::spawn(move || looker.look());
     }
 
@@ -225,15 +217,8 @@ impl Updates {
     }
 }
 
-/// The part of [`Updates`] a thread takes with it to look for a release.
-struct Looker {
-    phase: Arc<Mutex<Phase>>,
-    release: Arc<Mutex<Option<Release>>>,
-    checked: Arc<Mutex<Checked>>,
-    ctx: Option<egui::Context>,
-}
-
-impl Looker {
+/// Looking for a release, on a thread of its own.
+impl Updates {
     fn look(&self) {
         {
             let mut checked = self.checked.lock().expect("update");
@@ -424,7 +409,7 @@ mod tests {
     #[test]
     fn a_look_that_finds_nothing_says_so() {
         let updates = Updates::disabled();
-        updates.looker().record(Found::Nothing);
+        updates.record(Found::Nothing);
         assert_eq!(updates.checked(), Checked::UpToDate);
         assert_eq!(updates.offer(), None);
     }
@@ -432,9 +417,7 @@ mod tests {
     #[test]
     fn a_look_that_gets_no_answer_keeps_its_reason() {
         let updates = Updates::disabled();
-        updates
-            .looker()
-            .record(Found::Unreachable("The update server answered 404".into()));
+        updates.record(Found::Unreachable("The update server answered 404".into()));
         assert_eq!(
             updates.checked(),
             Checked::Unreachable("The update server answered 404".into())
@@ -444,7 +427,7 @@ mod tests {
     #[test]
     fn a_copy_that_cannot_replace_itself_is_told_where_it_stands() {
         let updates = Updates::disabled();
-        updates.looker().record(Found::Elsewhere {
+        updates.record(Found::Elsewhere {
             version: "0.24.0".into(),
             reason: "Move the app to Applications, then open it to update.".into(),
         });

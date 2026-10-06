@@ -157,10 +157,6 @@ impl ConfigFile {
         }
     }
 
-    pub fn locate(env: &Env) -> Self {
-        Self::new(resolve_path(env), env.os)
-    }
-
     pub fn assistant(&self) -> Assistant {
         self.assistant
     }
@@ -179,9 +175,7 @@ impl ConfigFile {
         if self.assistant != Assistant::ClaudeCode {
             return Ok(None);
         }
-        let mut name = self.path.file_name().unwrap_or_default().to_os_string();
-        name.push(".lock");
-        Lock::take(self.path.with_file_name(name)).map(Some)
+        Lock::take(self.path.with_added_extension("lock"))
     }
 
     /// The file as text; a missing one is empty.
@@ -330,11 +324,13 @@ impl Lock {
     const STALE: std::time::Duration = std::time::Duration::from_secs(10);
     const WAIT: std::time::Duration = std::time::Duration::from_secs(3);
 
-    fn take(path: PathBuf) -> Result<Self, String> {
+    /// `None` when there is no folder to lock in yet, or it cannot be
+    /// written: the write itself will say what is wrong.
+    fn take(path: PathBuf) -> Result<Option<Self>, String> {
         let started = std::time::Instant::now();
         loop {
             match std::fs::create_dir(&path) {
-                Ok(()) => return Ok(Self(path)),
+                Ok(()) => return Ok(Some(Self(path))),
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
                     let age = std::fs::metadata(&path)
                         .and_then(|m| m.modified())
@@ -352,9 +348,7 @@ impl Lock {
                         std::thread::sleep(std::time::Duration::from_millis(50));
                     }
                 }
-                // No folder to lock in yet, or one that cannot be written:
-                // the write itself will say what is wrong.
-                Err(_) => return Ok(Self(PathBuf::new())),
+                Err(_) => return Ok(None),
             }
         }
     }
@@ -362,9 +356,7 @@ impl Lock {
 
 impl Drop for Lock {
     fn drop(&mut self) {
-        if !self.0.as_os_str().is_empty() {
-            let _ = std::fs::remove_dir(&self.0);
-        }
+        let _ = std::fs::remove_dir(&self.0);
     }
 }
 

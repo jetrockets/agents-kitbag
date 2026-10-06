@@ -35,9 +35,7 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 }
 
 fn staging_path(path: &Path) -> PathBuf {
-    let mut name = path.file_name().unwrap_or_default().to_os_string();
-    name.push(format!(".{}.tmp", std::process::id()));
-    path.with_file_name(name)
+    path.with_added_extension(format!("{}.tmp", std::process::id()))
 }
 
 #[cfg(test)]
