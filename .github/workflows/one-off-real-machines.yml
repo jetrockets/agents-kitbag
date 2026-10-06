@@ -1,0 +1,73 @@
+# A one-off look at Linux and Windows on hosted machines. Not for merging:
+# it lives on its own branch and runs only for its own pull request.
+name: One-off real machines
+
+on:
+  pull_request:
+    paths: [.github/workflows/one-off-real-machines.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  real:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show active-toolchain || rustup toolchain install
+      - name: Linux packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libssl-dev libxkbcommon-dev libxkbcommon-x11-0 libwayland-dev \
+            libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libgl1-mesa-dri libegl1 libgl1 xvfb \
+            dbus-x11 gnome-keyring libsecret-tools
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: cargo build --locked -p agents-kitbag-app -p agents-kitbag-runner
+      - name: The credential store and a server set up for real (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          cargo test --locked -p agents-kitbag-core --features net --lib store::tests::native_store_round_trip -- --ignored --exact
+          cargo test --locked -p agents-kitbag-runner --test cli a_native_secret_reaches_the_server -- --ignored --exact
+          cargo test --locked -p agents-kitbag-core --features net --test real_setup -- --ignored --nocapture
+      # A session bus and an unlocked keyring, as a desktop login gives.
+      - name: The credential store and a server set up for real (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          dbus-run-session -- bash -euo pipefail -c '
+            echo "ci-keyring" | gnome-keyring-daemon --unlock --components=secrets
+            cargo test --locked -p agents-kitbag-core --features net --lib store::tests::native_store_round_trip -- --ignored --exact
+            cargo test --locked -p agents-kitbag-runner --test cli a_native_secret_reaches_the_server -- --ignored --exact
+            cargo test --locked -p agents-kitbag-core --features net --test real_setup -- --ignored --nocapture
+          '
+      # The runners have no GPU; Mesa draws OpenGL in software.
+      - name: Software OpenGL
+        if: runner.os == 'Windows'
+        uses: ssciwr/setup-mesa-dist-win@v2
+      - name: Draw the window
+        shell: bash
+        run: |
+          mkdir -p shots
+          app=target/debug/agents-kitbag
+          if [ "$RUNNER_OS" = Linux ]; then draw="xvfb-run -a"; else draw=""; fi
+          "$app" --version
+          $draw "$app" --demo-shot shots/window-dark.png
+          $draw "$app" --demo-shot shots/form-light.png --light --select notion --form
+          $draw "$app" --demo-shot shots/codex-dark.png --assistant codex --select figma
+          $draw "$app" --demo-shot shots/settings-dark.png --settings
+          for shot in shots/*.png; do test -s "$shot"; done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: window-${{ matrix.os }}
+          path: shots/
