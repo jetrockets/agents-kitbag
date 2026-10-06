@@ -169,6 +169,21 @@ impl ConfigFile {
         self.assistant == Assistant::Codex
     }
 
+    /// Claude Code rewrites `.claude.json` while it runs, and takes a lock
+    /// beside it (a folder, `.claude.json.lock`) for each write. Taking the
+    /// same lock for the read, the change and the write keeps a session's
+    /// write and this one from losing each other's.
+    ///
+    /// The other configs are only written by a person or by this app.
+    fn lock(&self) -> Result<Option<Lock>, String> {
+        if self.assistant != Assistant::ClaudeCode {
+            return Ok(None);
+        }
+        let mut name = self.path.file_name().unwrap_or_default().to_os_string();
+        name.push(".lock");
+        Lock::take(self.path.with_file_name(name)).map(Some)
+    }
+
     /// The file as text; a missing one is empty.
     fn text(&self) -> Result<String, String> {
         match std::fs::read_to_string(&self.path) {
@@ -219,6 +234,7 @@ impl ConfigFile {
 
     /// Adds or replaces one server and leaves every other key as it was.
     pub fn set_server(&self, key: &str, server: &ServerConfig) -> Result<(), String> {
+        let _lock = self.lock()?;
         if self.is_toml() {
             return self.write_text(&codex::set_server(&self.text()?, key, server)?);
         }
@@ -238,6 +254,7 @@ impl ConfigFile {
 
     /// Removes these servers; returns the keys that were there.
     pub fn remove_servers(&self, keys: &[String]) -> Result<Vec<String>, String> {
+        let _lock = self.lock()?;
         if self.is_toml() {
             let (text, removed) = codex::remove_servers(&self.text()?, keys)?;
             if !removed.is_empty() {
@@ -301,6 +318,52 @@ impl ConfigFile {
             log::warn!(
                 "could not make the config read-only ({error}); Claude may drop the servers on restart"
             );
+        }
+    }
+}
+
+/// A lock folder, removed when the write is over.
+struct Lock(PathBuf);
+
+impl Lock {
+    /// A holder that stopped renewing its lock this long ago is gone.
+    const STALE: std::time::Duration = std::time::Duration::from_secs(10);
+    const WAIT: std::time::Duration = std::time::Duration::from_secs(3);
+
+    fn take(path: PathBuf) -> Result<Self, String> {
+        let started = std::time::Instant::now();
+        loop {
+            match std::fs::create_dir(&path) {
+                Ok(()) => return Ok(Self(path)),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                    let age = std::fs::metadata(&path)
+                        .and_then(|m| m.modified())
+                        .ok()
+                        .and_then(|at| at.elapsed().ok());
+                    if age.is_some_and(|age| age > Self::STALE) {
+                        // Left behind by a session that died: take it over.
+                        let _ = std::fs::remove_dir(&path);
+                    } else if started.elapsed() > Self::WAIT {
+                        return Err(
+                            "Claude Code is writing its config right now. Try again in a moment."
+                                .to_owned(),
+                        );
+                    } else {
+                        std::thread::sleep(std::time::Duration::from_millis(50));
+                    }
+                }
+                // No folder to lock in yet, or one that cannot be written:
+                // the write itself will say what is wrong.
+                Err(_) => return Ok(Self(PathBuf::new())),
+            }
+        }
+    }
+}
+
+impl Drop for Lock {
+    fn drop(&mut self) {
+        if !self.0.as_os_str().is_empty() {
+            let _ = std::fs::remove_dir(&self.0);
         }
     }
 }
@@ -461,6 +524,31 @@ mod tests {
             .map(|(k, _)| k)
             .collect();
         assert_eq!(keys, ["mine", "asana"]);
+    }
+
+    #[test]
+    fn claude_codes_config_is_written_under_its_lock() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".claude.json");
+        let lock = dir.path().join(".claude.json.lock");
+        let config = ConfigFile::of(Assistant::ClaudeCode, &path, Os::Mac);
+
+        // A session holds the lock: the write waits, then says so.
+        std::fs::create_dir(&lock).unwrap();
+        let error = config.set_server("asana", &asana()).unwrap_err();
+        assert!(error.contains("Claude Code is writing"), "{error}");
+        assert!(!path.exists());
+
+        // The lock is released: the write goes through and leaves none.
+        std::fs::remove_dir(&lock).unwrap();
+        config.set_server("asana", &asana()).unwrap();
+        assert!(!lock.exists());
+        assert!(config.server("asana").unwrap().is_some());
+
+        // Claude Desktop's config takes no lock.
+        let desktop = ConfigFile::new(dir.path().join("claude_desktop_config.json"), Os::Mac);
+        desktop.set_server("asana", &asana()).unwrap();
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
     }
 
     #[test]

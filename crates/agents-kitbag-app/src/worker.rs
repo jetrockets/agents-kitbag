@@ -396,6 +396,12 @@ impl Worker {
             },
             gh
         );
+        // The system store is only of use through the runner: without it a
+        // Save would write a path to a program that is not there.
+        let mut stores = stores;
+        if !self.backend.demo && !Path::new(&self.backend.runner_path).exists() {
+            stores.system = None;
+        }
         self.state.stores = Some(stores);
         self.state.gh = Some(gh);
     }
@@ -550,6 +556,11 @@ impl Worker {
                     "Claude Desktop is not running. The servers load when it next opens.",
                 );
             }
+            // Still to be restarted: the reminder stays.
+            Restart::DidNotQuit => self.notice(
+                Tone::Bad,
+                "Claude Desktop did not quit. Quit it yourself (Cmd+Q) and open it again.",
+            ),
             Restart::Manual => log::info!("Claude Desktop is restarted by hand on this system"),
         }
     }

@@ -185,13 +185,15 @@ impl<'a> OnePassword<'a> {
                 message.to_owned()
             });
         }
-        // By title rather than by the id op returned: a title stays readable
-        // in the config file, and `op read` accepts either.
-        let stored = serde_json::from_str::<serde_json::Value>(&output.stdout)
-            .ok()
-            .and_then(|item| item["title"].as_str().map(str::to_owned))
-            .unwrap_or_else(|| title.to_owned());
-        Ok(secret_ref(vault, &stored))
+        // By the id op returned, not by title: saving the same server again
+        // makes a second item with the same title, and op refuses to read a
+        // reference that two items answer to. An id is one item for good.
+        let item = serde_json::from_str::<serde_json::Value>(&output.stdout).ok();
+        let named = item
+            .as_ref()
+            .and_then(|item| item["id"].as_str().or_else(|| item["title"].as_str()))
+            .unwrap_or(title);
+        Ok(secret_ref(vault, named))
     }
 
     pub fn read(&self, reference: &str) -> Option<Secret> {
@@ -289,7 +291,9 @@ mod tests {
         let reference = op(&runner)
             .create_item("Agents Kitbag - asana", "Private", &Secret::new("s3cret"))
             .unwrap();
-        assert_eq!(reference, "op://Private/Agents Kitbag - asana/credential");
+        // The item's id: a second item with the same title cannot make
+        // the reference ambiguous.
+        assert_eq!(reference, "op://Private/abc/credential");
         assert!(!runner.all_arguments().contains("s3cret"));
         let call = &runner.calls()[0];
         let template = call.args[2].strip_prefix("--template=").unwrap();

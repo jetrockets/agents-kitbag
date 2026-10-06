@@ -95,7 +95,15 @@ impl Assistant {
                             .iter()
                             .any(|root| root.join("Applications").join("Claude.app").is_dir()))
             }
-            Assistant::ClaudeCode => config.is_file() || env.home.join(".claude").is_dir(),
+            // Its settings folder is `CLAUDE_CONFIG_DIR` itself when that is
+            // set, and `~/.claude` when it is not.
+            Assistant::ClaudeCode => {
+                config.is_file()
+                    || match env.var("CLAUDE_CONFIG_DIR") {
+                        Some(folder) => Path::new(folder).is_dir(),
+                        None => env.home.join(".claude").is_dir(),
+                    }
+            }
             Assistant::Codex => config.parent().is_some_and(Path::is_dir),
         }
     }
@@ -184,6 +192,18 @@ mod tests {
         std::fs::create_dir_all(home.path().join(".codex")).unwrap();
         assert!(Assistant::Codex.installed(&env));
         std::fs::write(home.path().join(".claude.json"), "{}").unwrap();
+        assert!(Assistant::ClaudeCode.installed(&env));
+
+        // Moved with CLAUDE_CONFIG_DIR, it is looked for there and only there.
+        let moved = home.path().join("elsewhere");
+        let env = Env::with(
+            Os::Linux,
+            home.path(),
+            &[("CLAUDE_CONFIG_DIR", &moved.to_string_lossy())],
+        );
+        std::fs::create_dir_all(home.path().join(".claude")).unwrap();
+        assert!(!Assistant::ClaudeCode.installed(&env));
+        std::fs::create_dir_all(&moved).unwrap();
         assert!(Assistant::ClaudeCode.installed(&env));
     }
 

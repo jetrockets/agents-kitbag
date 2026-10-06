@@ -3,7 +3,7 @@ use base64::Engine;
 use super::*;
 use crate::health::classify;
 use crate::http::Request;
-use crate::validation::strip_url;
+use crate::validation::jira_base;
 
 fn myself(url: &str, email: &str, token: &str) -> Request {
     let basic = base64::engine::general_purpose::STANDARD.encode(format!("{email}:{token}"));
@@ -44,7 +44,7 @@ pub static JIRA: Integration = Integration {
     token: TokenSource::Field,
     launcher: Launcher::Uvx,
     validate: |values, token, http| {
-        let url = strip_url(&required(values, "url", "Jira URL")?);
+        let url = jira_base(&required(values, "url", "Jira URL")?);
         let email = required(values, "email", "Email")?;
         let response = http.send(&myself(&url, &email, token))?;
         if !response.ok() {
@@ -59,7 +59,7 @@ pub static JIRA: Integration = Integration {
     },
     build: |values, token, _| {
         Ok(ServerConfig::new("uvx", ["mcp-atlassian"]).with_env(&[
-            ("JIRA_URL", &strip_url(value(values, "url"))),
+            ("JIRA_URL", &jira_base(value(values, "url"))),
             ("JIRA_USERNAME", value(values, "email")),
             ("JIRA_API_TOKEN", token),
             ("TOOLSETS", "default"),

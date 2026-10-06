@@ -1,13 +1,26 @@
 use super::*;
 
-/// The organization from `https://dev.azure.com/Contoso/...`, or the name as typed.
+/// The organization from `https://dev.azure.com/Contoso/...` or the older
+/// `https://contoso.visualstudio.com/...`, or the name as typed.
 fn organization(input: &str) -> String {
     let input = input.trim();
-    match input.split_once("dev.azure.com/") {
-        Some((_, rest)) => rest.split(['/', '?', '#']).next().unwrap_or_default(),
-        None => input,
+    if let Some((_, rest)) = input.split_once("dev.azure.com/") {
+        return rest
+            .split(['/', '?', '#'])
+            .next()
+            .unwrap_or_default()
+            .to_owned();
     }
-    .to_owned()
+    let host = input
+        .split_once("://")
+        .map_or(input, |(_, rest)| rest)
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or_default();
+    match host.strip_suffix(".visualstudio.com") {
+        Some(name) if !name.is_empty() => name.to_owned(),
+        _ => input.to_owned(),
+    }
 }
 
 /// The organization a configured server was given: the first argument after
@@ -78,6 +91,12 @@ mod tests {
         );
         assert_eq!(organization("dev.azure.com/Contoso"), "Contoso");
         assert_eq!(organization("  Contoso "), "Contoso");
+        // The older address, still in bookmarks and in what people paste.
+        assert_eq!(
+            organization("https://contoso.visualstudio.com/Project/_git/x"),
+            "contoso"
+        );
+        assert_eq!(organization("contoso.visualstudio.com"), "contoso");
     }
 
     #[test]

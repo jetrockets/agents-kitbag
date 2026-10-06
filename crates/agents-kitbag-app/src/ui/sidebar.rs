@@ -73,12 +73,14 @@ fn row(
 ) -> (egui::Rect, Response) {
     let p = palette(ui.ctx());
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), ROW), Sense::hover());
-    let response = ui
-        .interact(rect, id, Sense::click())
-        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    let enabled = ui.is_enabled();
+    let mut response = ui.interact(rect, id, Sense::click());
+    if enabled {
+        response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+    }
     let described = described.to_owned();
     response.widget_info(move || {
-        egui::WidgetInfo::selected(egui::WidgetType::Button, true, selected, &described)
+        egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, selected, &described)
     });
     let fill = if selected {
         p.selected_bg
@@ -251,18 +253,22 @@ pub fn show(ui: &mut Ui, snapshot: &Snapshot, state: &mut State, out: &mut Vec<C
         .integrations
         .iter()
         .any(|i| !i.instances.is_empty());
-    let (rect, response) = row(
-        ui,
-        Id::new("check-all"),
-        "Check all tokens",
-        "Check all tokens",
-        false,
-    );
-    ui.put(
-        egui::Rect::from_center_size(rect.left_center() + vec2(15.0, 0.0), vec2(14.0, 14.0)),
-        Icon::Refresh.image(p.text_tertiary, 14.0),
-    );
-    if response.clicked() && any_configured {
-        out.push(Command::CheckAll);
-    }
+    // With no server there is nothing to check, and the row says so by
+    // being dim and deaf rather than by ignoring the click.
+    ui.add_enabled_ui(any_configured, |ui| {
+        let (rect, response) = row(
+            ui,
+            Id::new("check-all"),
+            "Check all tokens",
+            "Check all tokens",
+            false,
+        );
+        ui.put(
+            egui::Rect::from_center_size(rect.left_center() + vec2(15.0, 0.0), vec2(14.0, 14.0)),
+            Icon::Refresh.image(p.text_tertiary, 14.0),
+        );
+        if response.clicked() {
+            out.push(Command::CheckAll);
+        }
+    });
 }

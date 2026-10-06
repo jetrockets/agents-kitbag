@@ -76,14 +76,69 @@ fn start(plan: &Plan, secrets: Vec<(String, String)>) -> ExitCode {
 /// Windows cannot replace a process, so the runner waits and passes the
 /// server's own exit status through: Claude sees what it would have seen
 /// without the wrapper. The server inherits stdio and the console, so a
-/// Ctrl+C or a closed pipe reaches it directly.
+/// Ctrl+C or a closed pipe reaches it directly. An assistant that ends the
+/// runner outright ends the server with it, through a job object.
 #[cfg(not(unix))]
 fn start(plan: &Plan, secrets: Vec<(String, String)>) -> ExitCode {
-    match command(plan, secrets).status() {
+    let mut child = match command(plan, secrets).spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            return fail(
+                &format!("cannot start {}: {error}", plan.command),
+                NOT_FOUND,
+            );
+        }
+    };
+    #[cfg(windows)]
+    job::end_with_the_runner(&child);
+    match child.wait() {
         Ok(status) => ExitCode::from(status.code().map_or(128, |code| code.clamp(0, 255) as u8)),
-        Err(error) => fail(
-            &format!("cannot start {}: {error}", plan.command),
-            NOT_FOUND,
-        ),
+        Err(error) => fail(&format!("lost {}: {error}", plan.command), NOT_FOUND),
+    }
+}
+
+#[cfg(windows)]
+mod job {
+    use std::os::windows::io::AsRawHandle;
+    use std::process::Child;
+
+    use windows_sys::Win32::System::JobObjects::{
+        AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation,
+        SetInformationJobObject,
+    };
+
+    /// Puts the server in a job that Windows closes when the runner goes,
+    /// however it goes, and that takes the server (and what it started
+    /// from then on) with it. Without it a runner that is terminated leaves
+    /// `node` running with nobody to talk to.
+    ///
+    /// Best effort: a server that cannot be put in a job still runs.
+    #[allow(
+        unsafe_code,
+        reason = "the job object API is only reachable through the Windows bindings"
+    )]
+    pub fn end_with_the_runner(child: &Child) {
+        // SAFETY: the calls take a null name and security descriptor, a
+        // zeroed and fully sized information block that outlives the call,
+        // and the child's own live handle. The job handle is never closed on
+        // purpose: the runner's exit closes it, which is what ends the job.
+        unsafe {
+            let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+            if job.is_null() {
+                return;
+            }
+            let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+            limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            let set = SetInformationJobObject(
+                job,
+                JobObjectExtendedLimitInformation,
+                (&raw const limits).cast(),
+                size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            );
+            if set != 0 {
+                AssignProcessToJobObject(job, child.as_raw_handle().cast());
+            }
+        }
     }
 }

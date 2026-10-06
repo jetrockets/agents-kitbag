@@ -96,6 +96,12 @@ pub fn run(ctx: &Ctx, request: &Request) -> Result<Done, String> {
     let server = match &token {
         None => (integration.build)(&request.values, "", ctx.packages)?,
         Some(token) => {
+            // Everything that can fail without the token is done before the
+            // token is stored: a config that cannot be read, a server whose
+            // package will not install. Otherwise a failed Save would leave
+            // a secret behind in the store.
+            ctx.config.servers()?;
+            (integration.build)(&request.values, storage::PLACEHOLDER, ctx.packages)?;
             let stored = storage::keep(
                 ctx.env,
                 ctx.runner,
@@ -142,6 +148,32 @@ mod tests {
             server.args.extend(extra.iter().map(|a| (*a).to_owned()));
             Ok(server)
         }
+    }
+
+    /// A package that will not install.
+    struct NoPackages;
+    impl Packages for NoPackages {
+        fn entry(&self, _: &str, _: &[&str]) -> Result<ServerConfig, String> {
+            Err("npm install failed".to_owned())
+        }
+    }
+
+    #[test]
+    fn nothing_is_stored_when_the_server_cannot_be_built_or_the_config_read() {
+        let world = world();
+        let runner = FakeRunner::default().on("security", "add-generic-password", ok(""));
+        let http = FakeHttp::default().on("asana.com", 200, r#"{"data":{"name":"Ada"}}"#);
+        let asana = request("asana", None, &[("token", "tok")], StoreChoice::System);
+
+        let mut ctx = ctx(&world, &runner, &http);
+        ctx.packages = &NoPackages;
+        assert_eq!(run(&ctx, &asana).unwrap_err(), "npm install failed");
+        assert!(runner.calls().is_empty(), "the token was stored anyway");
+
+        std::fs::write(world.config.path(), "{ not json").unwrap();
+        ctx.packages = &Npx;
+        assert!(run(&ctx, &asana).unwrap_err().contains("not valid JSON"));
+        assert!(runner.calls().is_empty(), "the token was stored anyway");
     }
 
     const RUNNER: &str = "/Applications/Agents Kitbag.app/Contents/MacOS/agents-kitbag-runner";

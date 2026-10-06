@@ -18,3 +18,9 @@ path = "src/main.rs"
 # The credential stores and the argument format. No HTTP client: the runner
 # makes no requests and must start at once.
 agents-kitbag-core.workspace = true
+
+# Windows only: the job object that ends the server when the runner is ended.
+# Windows cannot replace a process, so the runner stays its parent, and a
+# parent that is killed leaves its child running unless a job holds it.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }

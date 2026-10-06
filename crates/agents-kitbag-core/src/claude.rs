@@ -22,6 +22,9 @@ pub enum Restart {
     Restarted,
     /// Nothing to restart: the servers load the next time Claude opens.
     NotRunning,
+    /// It was asked to quit and is still there: opening it again would only
+    /// bring the old process forward, with the old config.
+    DidNotQuit,
     /// Windows and Linux: the person quits and reopens Claude Desktop.
     ///
     /// On Linux there is no official build to know how to start. On Windows:
@@ -59,6 +62,9 @@ fn restart_waiting(runner: &dyn CommandRunner, os: Os, pause: Duration) -> Resta
         }
         std::thread::sleep(pause);
     }
+    if is_running(runner, os) {
+        return Restart::DidNotQuit;
+    }
     runner.run("/usr/bin/open", &["-a", "Claude"], None);
     Restart::Restarted
 }
@@ -83,19 +89,58 @@ mod tests {
         assert_eq!(runner.calls().len(), 1);
     }
 
+    /// A Claude that is running until it is told to quit, or for good.
+    struct Claude {
+        quits: bool,
+        calls: std::sync::Mutex<Vec<String>>,
+    }
+
+    impl Claude {
+        fn new(quits: bool) -> Self {
+            Self {
+                quits,
+                calls: std::sync::Mutex::new(Vec::new()),
+            }
+        }
+
+        fn calls(&self) -> Vec<String> {
+            self.calls.lock().unwrap().clone()
+        }
+    }
+
+    impl CommandRunner for Claude {
+        fn run(&self, program: &str, _: &[&str], _: Option<&str>) -> crate::exec::Output {
+            let mut calls = self.calls.lock().unwrap();
+            let killed = calls.iter().any(|call| call.ends_with("pkill"));
+            calls.push(program.to_owned());
+            if program.ends_with("pgrep") && killed && self.quits {
+                fail(1, "")
+            } else {
+                ok("123")
+            }
+        }
+    }
+
     #[test]
     fn a_running_claude_is_quit_and_opened_again() {
-        let runner = FakeRunner::default()
-            .on("pgrep", "Claude", ok("123"))
-            .on("pkill", "Claude", ok(""))
-            .on("open", "Claude", ok(""));
+        let runner = Claude::new(true);
         assert_eq!(
             restart_waiting(&runner, Os::Mac, Duration::ZERO),
             Restart::Restarted
         );
-        let programs: Vec<_> = runner.calls().iter().map(|c| c.program.clone()).collect();
+        let programs = runner.calls();
         assert_eq!(programs[1], "/usr/bin/pkill");
         assert_eq!(programs.last().unwrap(), "/usr/bin/open");
+    }
+
+    #[test]
+    fn a_claude_that_will_not_quit_is_not_called_restarted() {
+        let runner = Claude::new(false);
+        assert_eq!(
+            restart_waiting(&runner, Os::Mac, Duration::ZERO),
+            Restart::DidNotQuit
+        );
+        assert!(!runner.calls().iter().any(|call| call.ends_with("open")));
     }
 
     #[test]

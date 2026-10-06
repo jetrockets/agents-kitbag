@@ -106,6 +106,22 @@ impl SecretRef {
     }
 }
 
+/// The line `security -i` reads to add or replace an entry. Its parser
+/// takes double quotes and backslash escapes; a value that would end the
+/// line cannot be written this way.
+fn keychain_add(user: &str, name: &str, value: &str) -> Result<String, String> {
+    if value.chars().any(char::is_control) {
+        return Err("The token has a line break or a control character in it".to_owned());
+    }
+    let quoted = |text: &str| format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\""));
+    Ok(format!(
+        "add-generic-password -a {} -s {} -U -w {}\n",
+        quoted(user),
+        quoted(name),
+        quoted(value)
+    ))
+}
+
 impl std::fmt::Display for SecretRef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}:{}", self.backend.prefix(), self.name)
@@ -265,22 +281,15 @@ impl Stores<'_> {
         let output = match reference.backend {
             // gh owns its token; there is nothing to write.
             Backend::Gh => return Ok(()),
-            // `-w` last makes security prompt for the value and its
-            // confirmation, so both come from stdin and the secret stays out
-            // of the arguments.
-            Backend::Keychain => self.runner.run(
-                &self.bin("security"),
-                &[
-                    "add-generic-password",
-                    "-a",
-                    self.user(),
-                    "-s",
-                    name,
-                    "-U",
-                    "-w",
-                ],
-                Some(&format!("{value}\n{value}\n")),
-            ),
+            // The command itself goes through stdin (`security -i` reads
+            // commands there), so the secret stays out of the arguments.
+            // Not `-w` last with the value on stdin: that prompt keeps only
+            // the first 128 characters, and a Jira token is longer.
+            Backend::Keychain => {
+                let command = keychain_add(self.user(), name, value)?;
+                self.runner
+                    .run(&self.bin("security"), &["-i"], Some(&command))
+            }
             Backend::Dpapi if safe_name(name) => self.powershell(&ps_write(name), Some(value)),
             Backend::Dpapi => return Err(format!("\"{name}\" is not a name a secret can have")),
             // The secret is read from stdin when it is not a terminal.
@@ -478,8 +487,19 @@ mod tests {
             )
             .unwrap();
         assert!(!runner.all_arguments().contains("s3cret"));
-        assert_eq!(runner.calls()[0].input.as_deref(), Some("s3cret\ns3cret\n"));
-        assert_eq!(runner.calls()[0].args.last().unwrap(), "-w");
+        assert_eq!(runner.calls()[0].args, ["-i"]);
+        assert_eq!(
+            runner.calls()[0].input.as_deref(),
+            Some("add-generic-password -a \"me\" -s \"agents-kitbag-asana\" -U -w \"s3cret\"\n")
+        );
+    }
+
+    #[test]
+    fn a_keychain_value_is_quoted_whole_and_never_cut() {
+        let long = format!("a\"b\\c {}", "x".repeat(300));
+        let line = keychain_add("me", "n", &long).unwrap();
+        assert!(line.ends_with(&format!("-w \"a\\\"b\\\\c {}\"\n", "x".repeat(300))));
+        assert!(keychain_add("me", "n", "two\nlines").is_err());
     }
 
     #[test]
@@ -658,7 +678,10 @@ mod tests {
             .filter(|_| backend == Backend::Dpapi)
             .map(|folder| folder.join(format!("{}.dpapi", reference.name)))
             .map(|file| std::fs::read_to_string(file).unwrap_or_default());
-        let replaced = stores.store(&reference, &Secret::new("p@ss w0rd/+=$'x"));
+        // Longer than the 128 characters the Keychain's own prompt keeps,
+        // with the characters a quoted command line could trip on.
+        let long = format!("p@ss \"w0rd\"\\/+=$'x {}", "0123456789".repeat(30));
+        let replaced = stores.store(&reference, &Secret::new(&long));
         let second = stores.read(&reference);
         stores.remove(&reference);
 
@@ -671,7 +694,7 @@ mod tests {
             );
         }
         assert_eq!(replaced, Ok(()));
-        assert_eq!(second.unwrap().expose(), "p@ss w0rd/+=$'x");
+        assert_eq!(second.unwrap().expose(), long);
         assert!(stores.read(&reference).is_none(), "the entry is gone");
     }
 }

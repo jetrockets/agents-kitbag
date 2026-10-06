@@ -365,7 +365,7 @@ fn banners(ui: &mut Ui, snapshot: &Snapshot, out: &mut Vec<Command>) {
     if !snapshot.migration.is_empty() {
         let count = snapshot.migration.len();
         let message = format!(
-            "{count} server{} ({}) still start{} through the old Node runner. Move {} onto the built-in one.",
+            "{count} server{} ({}) start{} through a runner that is no longer this app's: the old Node one, or one at a path the app has moved from. Move {} onto the one beside this app.",
             if count == 1 { "" } else { "s" },
             snapshot.migration.join(", "),
             if count == 1 { "s" } else { "" },
