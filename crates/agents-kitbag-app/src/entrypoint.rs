@@ -232,17 +232,21 @@ fn show_alert(message: &str) {
     let _ = message;
 }
 
+/// What is logged: the app's own lines and the core's, and only warnings
+/// from everything else. The app's lines come under two names: its modules
+/// log as `agents_kitbag::...` (the crate), the start line as
+/// `agents-kitbag` (the program).
+fn log_filter(verbose: bool) -> String {
+    let level = if verbose { "debug" } else { "info" };
+    format!("warn,agents-kitbag={level},agents_kitbag={level},agents_kitbag_core={level}")
+}
+
 /// A log file people can attach to a bug report, and a panic log without
 /// payloads (fastframe-log). Tokens never reach either: they travel as
 /// `Secret`. `--demo` logs to the terminal only.
 fn start_logging(demo: bool, verbose: bool) {
-    let filter = if verbose {
-        "warn,agents-kitbag=debug,agents_kitbag_core=debug"
-    } else {
-        "warn,agents-kitbag=info,agents_kitbag_core=info"
-    };
-    let mut logging =
-        fastframe_log::Logging::new("agents-kitbag", env!("CARGO_PKG_VERSION")).filter(filter);
+    let mut logging = fastframe_log::Logging::new("agents-kitbag", env!("CARGO_PKG_VERSION"))
+        .filter(log_filter(verbose));
     if !demo
         && let Some(folder) = log_dir()
         && std::fs::create_dir_all(&folder).is_ok()
@@ -337,6 +341,18 @@ mod tests {
             startup_error_message(&error),
             "Agents Kitbag could not start: opening the window: no OpenGL context"
         );
+    }
+
+    /// The log file was empty but for its first line when the filter named
+    /// the program and not the crate its modules log under.
+    #[test]
+    fn the_apps_own_modules_are_logged() {
+        let this_crate = module_path!().split("::").next().unwrap();
+        for verbose in [false, true] {
+            let filter = log_filter(verbose);
+            assert!(filter.contains(&format!(",{this_crate}=")), "{filter}");
+            assert!(filter.contains(",agents_kitbag_core="), "{filter}");
+        }
     }
 
     #[test]

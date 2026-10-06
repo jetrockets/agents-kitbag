@@ -2,7 +2,7 @@
 
 use agents_kitbag_core::assistant::Assistant;
 use agents_kitbag_core::gh;
-use agents_kitbag_core::integrations::{self, FieldKind, Integration, TOKEN, TokenSource};
+use agents_kitbag_core::integrations::{self, FieldKind, Integration, TokenSource};
 use agents_kitbag_core::storage::{Available, StoreChoice};
 use eframe::egui::{self, Id, Ui};
 
@@ -270,13 +270,7 @@ fn stores(
                 "GitHub CLI (no second copy is stored)",
             );
         }
-        // The runner fetches a stored token at launch; without it only
-        // 1Password and the config file are left.
-        let runner_ok = snapshot
-            .runner_warning
-            .as_ref()
-            .is_none_or(|w| !w.contains("missing"));
-        if let Some(system) = available.system.filter(|_| runner_ok) {
+        if let Some(system) = available.system {
             ui.radio_value(&mut choice, StoreChoice::System, system.label());
         }
         if let Some(vaults) = &available.vaults {
@@ -378,7 +372,7 @@ fn github_cli(ui: &mut Ui, snapshot: &Snapshot, out: &mut Vec<Command>) -> bool 
 }
 
 /// The id of the token field, for the tests.
-#[allow(dead_code, reason = "used by the tests")]
+#[cfg(test)]
 pub fn token_field() -> Id {
-    field_id(TOKEN)
+    field_id(integrations::TOKEN)
 }

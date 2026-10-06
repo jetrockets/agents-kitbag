@@ -78,13 +78,8 @@ pub fn item_template(title: &str, token: &Secret) -> String {
 
 /// Whether the server is launched through `op run`.
 pub fn is_wrapped(server: &ServerConfig) -> bool {
-    let bin = server
-        .command
-        .rsplit(['/', '\\'])
-        .next()
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    (bin == "op" || bin == "op.exe") && server.args.first().is_some_and(|a| a == "run")
+    crate::exec::program_name(&server.command) == "op"
+        && server.args.first().is_some_and(|a| a == "run")
 }
 
 /// `op run` conceals secrets found on stdout by default. stdout is the MCP

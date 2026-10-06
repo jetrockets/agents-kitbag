@@ -17,6 +17,15 @@ impl Output {
     pub fn ok(&self) -> bool {
         self.code == 0
     }
+
+    /// A command that could not be started, or was given up on.
+    fn failed(stderr: String) -> Self {
+        Self {
+            code: -1,
+            stdout: String::new(),
+            stderr,
+        }
+    }
 }
 
 pub trait CommandRunner: Send + Sync {
@@ -31,95 +40,82 @@ pub struct SystemRunner;
 
 impl CommandRunner for SystemRunner {
     fn run(&self, program: &str, args: &[&str], input: Option<&str>) -> Output {
-        let mut command = Command::new(program);
-        command
-            .args(args)
-            // A pipe only when there is something to write. `op item create
-            // --template` refuses to run with a pipe on stdin ("cannot
-            // create an item from template and stdin at the same time"),
-            // even an empty one that is closed at once.
-            .stdin(if input.is_some() {
-                Stdio::piped()
-            } else {
-                Stdio::null()
-            })
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        hide_console(&mut command);
-        let mut child = match command.spawn() {
-            Ok(child) => child,
-            Err(error) => {
-                log::debug!("{program} could not be started: {error}");
-                return Output {
-                    code: -1,
-                    stdout: String::new(),
-                    stderr: error.to_string(),
-                };
-            }
-        };
-        // Closing stdin (the drop) is what lets a command reading it finish.
-        if let Some(mut stdin) = child.stdin.take()
-            && let Some(input) = input
-        {
-            let _ = stdin.write_all(input.as_bytes());
+        run_within(program, args, input, limit(program))
+    }
+}
+
+/// Runs the command, and gives up on it after `limit`.
+fn run_within(program: &str, args: &[&str], input: Option<&str>, limit: Duration) -> Output {
+    let mut command = Command::new(program);
+    command
+        .args(args)
+        // A pipe only when there is something to write. `op item create
+        // --template` refuses to run with a pipe on stdin ("cannot
+        // create an item from template and stdin at the same time"),
+        // even an empty one that is closed at once.
+        .stdin(if input.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    hide_console(&mut command);
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            log::debug!("{program} could not be started: {error}");
+            return Output::failed(error.to_string());
         }
-        // Read both streams on their own threads, so a command that fills
-        // one pipe cannot stall, and so the wait below can give up.
-        let stdout = child.stdout.take().map(drain);
-        let stderr = child.stderr.take().map(drain);
-        let limit = limit(program);
-        let started = Instant::now();
-        let status = loop {
-            match child.try_wait() {
-                Ok(Some(status)) => break Ok(status),
-                Ok(None) if started.elapsed() < limit => {
-                    std::thread::sleep(Duration::from_millis(20));
-                }
-                Ok(None) => {
-                    // A prompt nobody answers (1Password waiting to be
-                    // unlocked, a Keychain dialog) would hold the one worker
-                    // thread, and everything queued behind it, for good.
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    log::warn!("{program} did not answer in {} s", limit.as_secs());
-                    return Output {
-                        code: -1,
-                        stdout: String::new(),
-                        stderr: format!(
-                            "{} did not answer in {} seconds",
-                            name(program),
-                            limit.as_secs()
-                        ),
-                    };
-                }
-                Err(error) => break Err(error),
+    };
+    // Closing stdin (the drop) is what lets a command reading it finish.
+    if let Some(mut stdin) = child.stdin.take()
+        && let Some(input) = input
+    {
+        let _ = stdin.write_all(input.as_bytes());
+    }
+    // Read both streams on their own threads, so a command that fills
+    // one pipe cannot stall, and so the wait below can give up.
+    let stdout = child.stdout.take().map(drain);
+    let stderr = child.stderr.take().map(drain);
+    let started = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if started.elapsed() < limit => {
+                std::thread::sleep(Duration::from_millis(20));
             }
-        };
-        let collect = |reader: Option<std::thread::JoinHandle<Vec<u8>>>| {
-            reader
-                .and_then(|reader| reader.join().ok())
-                .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-                .unwrap_or_default()
-        };
-        match status {
-            Ok(status) => {
-                let code = status.code().unwrap_or(-1);
-                // The program and how it ended, for `--verbose`. Not its
-                // arguments (a PowerShell script is one), and never its
-                // input or output: those are where secrets are.
-                log::debug!("{program} exited {code}");
-                Output {
-                    code,
-                    stdout: collect(stdout),
-                    stderr: collect(stderr),
-                }
+            Ok(None) => {
+                // A prompt nobody answers (1Password waiting to be
+                // unlocked, a Keychain dialog) would hold the one worker
+                // thread, and everything queued behind it, for good.
+                let _ = child.kill();
+                let _ = child.wait();
+                log::warn!("{program} did not answer in {} s", limit.as_secs());
+                return Output::failed(format!(
+                    "{} did not answer in {} seconds",
+                    program_name(program),
+                    limit.as_secs()
+                ));
             }
-            Err(error) => Output {
-                code: -1,
-                stdout: String::new(),
-                stderr: error.to_string(),
-            },
+            Err(error) => return Output::failed(error.to_string()),
         }
+    };
+    let collect = |reader: Option<std::thread::JoinHandle<Vec<u8>>>| {
+        reader
+            .and_then(|reader| reader.join().ok())
+            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+            .unwrap_or_default()
+    };
+    let code = status.code().unwrap_or(-1);
+    // The program and how it ended, for `--verbose`. Not its arguments (a
+    // PowerShell script is one), and never its input or output: those are
+    // where secrets are.
+    log::debug!("{program} exited {code}");
+    Output {
+        code,
+        stdout: collect(stdout),
+        stderr: collect(stderr),
     }
 }
 
@@ -131,29 +127,29 @@ fn drain(mut stream: impl Read + Send + 'static) -> std::thread::JoinHandle<Vec<
     })
 }
 
-/// The program's file name, without a folder or `.exe`.
-fn name(program: &str) -> String {
-    let file = program.rsplit(['/', '\\']).next().unwrap_or(program);
-    file.strip_suffix(".exe")
-        .unwrap_or(file)
-        .to_ascii_lowercase()
+/// The program's file name in lowercase, without a folder or `.exe`.
+pub fn program_name(program: &str) -> String {
+    let file = program
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(program)
+        .to_ascii_lowercase();
+    match file.strip_suffix(".exe") {
+        Some(name) => name.to_owned(),
+        None => file,
+    }
 }
 
 /// How long a command may take. Installing a package is slow on a cold
 /// cache; everything else answers at once unless it is waiting for a person,
 /// who gets two minutes to unlock 1Password or allow the Keychain.
 fn limit(program: &str) -> Duration {
-    match name(program).as_str() {
+    match program_name(program).as_str() {
         "npm" | "npx" | "node" | "uvx" | "uv" | "brew" | "winget" | "cmd" => {
             Duration::from_secs(15 * 60)
         }
-        _ => Duration::from_secs(TEST_LIMIT.with(std::cell::Cell::get).unwrap_or(120)),
+        _ => Duration::from_secs(120),
     }
-}
-
-thread_local! {
-    /// A shorter limit, for the test of the limit itself.
-    static TEST_LIMIT: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
 }
 
 /// A windowed app that starts a console program gets a console window
@@ -190,10 +186,13 @@ mod tests {
 
     #[test]
     fn a_command_that_never_answers_is_given_up_on() {
-        TEST_LIMIT.with(|limit| limit.set(Some(1)));
         let started = Instant::now();
-        let out = SystemRunner.run("/bin/sh", &["-c", "echo early; sleep 30"], None);
-        TEST_LIMIT.with(|limit| limit.set(None));
+        let out = run_within(
+            "/bin/sh",
+            &["-c", "echo early; sleep 30"],
+            None,
+            Duration::from_secs(1),
+        );
         assert!(started.elapsed() < Duration::from_secs(10));
         assert_eq!(out.code, -1);
         assert_eq!(out.stderr, "sh did not answer in 1 seconds");

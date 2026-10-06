@@ -189,23 +189,17 @@ pub fn show(ui: &mut Ui, snapshot: &Snapshot, state: &mut State, out: &mut Vec<C
             selected,
         );
         let dot = rect.left_center() + vec2(15.0, 0.0);
-        match mark {
-            Mark::NotConfigured => {
-                ui.painter()
-                    .circle_stroke(dot, 4.0, Stroke::new(1.5, p.text_tertiary));
-            }
-            Mark::Pending => {
-                ui.painter().circle_filled(dot, 4.5, p.text_tertiary);
-            }
-            Mark::Good => {
-                ui.painter().circle_filled(dot, 4.5, p.good);
-            }
-            Mark::Warn => {
-                ui.painter().circle_filled(dot, 4.5, p.warn);
-            }
-            Mark::Bad => {
-                ui.painter().circle_filled(dot, 4.5, p.bad);
-            }
+        let colour = match mark {
+            Mark::NotConfigured | Mark::Pending => p.text_tertiary,
+            Mark::Good => p.good,
+            Mark::Warn => p.warn,
+            Mark::Bad => p.bad,
+        };
+        if mark == Mark::NotConfigured {
+            ui.painter()
+                .circle_stroke(dot, 4.0, Stroke::new(1.5, colour));
+        } else {
+            ui.painter().circle_filled(dot, 4.5, colour);
         }
         if integration.is_multi() && count > 0 {
             ui.painter().text(

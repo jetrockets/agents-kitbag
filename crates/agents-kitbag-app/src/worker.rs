@@ -230,11 +230,8 @@ impl Worker {
             log::info!("{}", command.describe());
         }
         match command {
-            Command::Refresh | Command::DismissNotice => {
-                if command == Command::DismissNotice {
-                    self.state.notice = None;
-                }
-            }
+            Command::Refresh => {}
+            Command::DismissNotice => self.state.notice = None,
             Command::UseAssistant(assistant) => self.use_assistant(assistant),
             Command::LoadStores => self.load_stores(),
             Command::CheckAll => self.check(None),
@@ -381,7 +378,7 @@ impl Worker {
     }
 
     fn load_stores(&mut self) {
-        let (stores, gh) = self
+        let (mut stores, gh) = self
             .backend
             .with(|ctx| (storage::available(ctx.env, ctx.runner), ctx.gh().state()));
         log::info!(
@@ -398,7 +395,6 @@ impl Worker {
         );
         // The system store is only of use through the runner: without it a
         // Save would write a path to a program that is not there.
-        let mut stores = stores;
         if !self.backend.demo && !Path::new(&self.backend.runner_path).exists() {
             stores.system = None;
         }

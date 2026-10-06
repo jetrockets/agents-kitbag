@@ -22,20 +22,12 @@ pub fn needs_migration(server: &ServerConfig, runner_path: &str, os: Os) -> bool
 /// A server whose secrets are in another system's store stays as it is:
 /// the runner could not start it here either.
 fn readable_here(server: &ServerConfig, os: Os) -> bool {
-    let stop = server
-        .args
-        .iter()
-        .position(|a| a == "--")
-        .unwrap_or(server.args.len());
-    server.args[..stop]
-        .windows(2)
-        .filter(|pair| pair[0] == "--secret")
-        .all(|pair| {
-            pair[1]
-                .split_once('=')
-                .and_then(|(_, reference)| SecretRef::parse(reference).ok())
-                .is_some_and(|reference| reference.backend.readable_on(os))
-        })
+    runner::secrets(server).all(|secret| {
+        secret
+            .split_once('=')
+            .and_then(|(_, reference)| SecretRef::parse(reference).ok())
+            .is_some_and(|reference| reference.backend.readable_on(os))
+    })
 }
 
 /// The same server, launched by the runner at `runner_path`.
